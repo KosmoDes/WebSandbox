@@ -134,6 +134,7 @@
                     <li>8. Плавьте железо в слитки (уголь + руда)</li>
                     <li>9. Создайте железный молот</li>
                     <li>10. Постройте алтарь и победите босса!</li>
+                    <li>11. Постройте алтарь в пещере для вызова пещерного босса!</li>
                 </ul>
             </div>
         </div>
@@ -152,6 +153,9 @@
         const PLAYER_SIZE = 24;
         const PLAYER_SPEED = 4;
         const BOSS_SIZE = 64;
+        const CAVE_BOSS_SIZE = 72;
+        const PROJECTILE_SIZE = 12;
+        const PROJECTILE_SPEED = 3;
         
         // Уровни мира
         const WORLD_LEVELS = {
@@ -327,6 +331,9 @@
                 this.currentLevel = WORLD_LEVELS.SURFACE;
                 this.lastSmeltTime = 0;
                 this.smeltCooldown = 1000; // мс
+                this.isInvulnerable = false;
+                this.invulnerabilityTimer = 0;
+                this.invulnerabilityDuration = 1000; // мс
             }
             
             update(keys, world, deltaTime) {
@@ -368,6 +375,14 @@
                 // Обновление времени перезарядки плавки
                 if (this.lastSmeltTime > 0) {
                     this.lastSmeltTime -= deltaTime;
+                }
+                
+                // Обновление неуязвимости
+                if (this.isInvulnerable) {
+                    this.invulnerabilityTimer -= deltaTime;
+                    if (this.invulnerabilityTimer <= 0) {
+                        this.isInvulnerable = false;
+                    }
                 }
             }
             
@@ -437,8 +452,15 @@
             }
             
             takeDamage(amount) {
+                if (this.isInvulnerable) return true;
+                
                 this.health -= amount;
                 if (this.health < 0) this.health = 0;
+                
+                // Активируем неуязвимость после получения урона
+                this.isInvulnerable = true;
+                this.invulnerabilityTimer = this.invulnerabilityDuration;
+                
                 return this.health > 0;
             }
             
@@ -456,8 +478,16 @@
             }
             
             draw(ctx, camera) {
-                // Цвет игрока зависит от уровня
-                const playerColor = this.currentLevel === WORLD_LEVELS.SURFACE ? '#2ecc71' : '#3498db';
+                // Цвет игрока зависит от уровня и неуязвимости
+                let playerColor = this.currentLevel === WORLD_LEVELS.SURFACE ? '#2ecc71' : '#3498db';
+                
+                // Мерцание при неуязвимости
+                if (this.isInvulnerable) {
+                    const alpha = (Math.sin(Date.now() / 100) + 1) / 2;
+                    playerColor = this.currentLevel === WORLD_LEVELS.SURFACE ? 
+                        `rgba(46, 204, 113, ${alpha})` : 
+                        `rgba(52, 152, 219, ${alpha})`;
+                }
                 
                 // Рисуем игрока
                 ctx.fillStyle = playerColor;
@@ -1340,7 +1370,95 @@
         }
         
         // ============================
-        // КЛАСС БОССА
+        // КЛАСС ПРОДЖЕКТАЙЛА
+        // ============================
+        class Projectile {
+            constructor(x, y, targetX, targetY, damage, speed = PROJECTILE_SPEED, color = '#ff4444') {
+                this.x = x;
+                this.y = y;
+                this.size = PROJECTILE_SIZE;
+                this.damage = damage;
+                this.speed = speed;
+                this.color = color;
+                
+                // Вычисляем направление к цели
+                const dx = targetX - x;
+                const dy = targetY - y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                this.velocityX = (dx / distance) * speed;
+                this.velocityY = (dy / distance) * speed;
+                
+                this.active = true;
+            }
+            
+            update(deltaTime) {
+                if (!this.active) return;
+                
+                this.x += this.velocityX;
+                this.y += this.velocityY;
+                
+                // Проверяем выход за границы мира
+                if (this.x < 0 || this.x > WORLD_WIDTH * TILE_SIZE || 
+                    this.y < 0 || this.y > WORLD_HEIGHT * TILE_SIZE) {
+                    this.active = false;
+                }
+            }
+            
+            checkCollision(player) {
+                if (!this.active) return false;
+                
+                const dx = this.x - (player.x + player.size/2);
+                const dy = this.y - (player.y + player.size/2);
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                return distance < (this.size/2 + player.size/2);
+            }
+            
+            draw(ctx, camera) {
+                if (!this.active) return;
+                
+                // Основной цвет снаряда
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x,
+                    this.y - camera.y,
+                    this.size / 2,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                // Яркое ядро
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x,
+                    this.y - camera.y,
+                    this.size / 4,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                // Свечение
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x,
+                    this.y - camera.y,
+                    this.size / 2 + 2,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.stroke();
+            }
+        }
+        
+        // ============================
+        // КЛАСС БОССА ПОВЕРХНОСТИ
         // ============================
         class Boss {
             constructor(x, y) {
@@ -1354,6 +1472,7 @@
                 this.lastAttackTime = 0;
                 this.attackCooldown = 1000; // мс
                 this.alive = true;
+                this.isCaveBoss = false;
             }
             
             update(player, deltaTime) {
@@ -1469,6 +1588,10 @@
                 ctx.stroke();
                 
                 // Полоска здоровья
+                this.drawHealthBar(ctx, camera);
+            }
+            
+            drawHealthBar(ctx, camera) {
                 const barWidth = 100;
                 const barHeight = 8;
                 const barX = this.x - camera.x - barWidth / 2;
@@ -1484,6 +1607,247 @@
                 ctx.strokeStyle = '#fff';
                 ctx.lineWidth = 1;
                 ctx.strokeRect(barX, barY, barWidth, barHeight);
+                
+                // Текст с названием босса
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 12px Courier New';
+                ctx.textAlign = 'center';
+                const bossName = this.isCaveBoss ? 'Пещерный Босс' : 'Босс Поверхности';
+                ctx.fillText(bossName, this.x - camera.x, barY - 5);
+            }
+        }
+        
+        // ============================
+        // КЛАСС ПЕЩЕРНОГО БОССА
+        // ============================
+        class CaveBoss extends Boss {
+            constructor(x, y) {
+                super(x, y);
+                this.size = CAVE_BOSS_SIZE;
+                this.health = 250;
+                this.maxHealth = 250;
+                this.speed = 1.2;
+                this.damage = 20;
+                this.projectiles = [];
+                this.lastProjectileTime = 0;
+                this.projectileCooldown = 2000; // мс
+                this.projectileDamage = 10;
+                this.isCaveBoss = true;
+            }
+            
+            update(player, deltaTime) {
+                if (!this.alive) return;
+                
+                // Движение к игроку (медленнее, чем обычный босс)
+                const dx = player.x - this.x;
+                const dy = player.y - this.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // Двигаемся только если игрок достаточно далеко
+                if (distance > 100) {
+                    this.x += (dx / distance) * this.speed;
+                    this.y += (dy / distance) * this.speed;
+                }
+                
+                // Обновление времени перезарядки атаки
+                if (this.lastAttackTime > 0) {
+                    this.lastAttackTime -= deltaTime;
+                }
+                
+                // Обновление времени перезарядки снарядов
+                if (this.lastProjectileTime > 0) {
+                    this.lastProjectileTime -= deltaTime;
+                }
+                
+                // Проверка столкновения с игроком
+                if (this.checkCollision(player) && this.lastAttackTime <= 0) {
+                    player.takeDamage(this.damage);
+                    this.lastAttackTime = this.attackCooldown;
+                }
+                
+                // Стрельба снарядами
+                if (this.lastProjectileTime <= 0 && distance < 400) {
+                    this.shootProjectile(player);
+                    this.lastProjectileTime = this.projectileCooldown;
+                }
+                
+                // Обновление снарядов
+                for (let i = this.projectiles.length - 1; i >= 0; i--) {
+                    const projectile = this.projectiles[i];
+                    projectile.update(deltaTime);
+                    
+                    // Проверка столкновения с игроком
+                    if (projectile.checkCollision(player)) {
+                        player.takeDamage(projectile.damage);
+                        projectile.active = false;
+                    }
+                    
+                    // Удаление неактивных снарядов
+                    if (!projectile.active) {
+                        this.projectiles.splice(i, 1);
+                    }
+                }
+            }
+            
+            shootProjectile(player) {
+                // Создаем снаряд, направленный в игрока
+                const projectile = new Projectile(
+                    this.x,
+                    this.y,
+                    player.x + player.size/2,
+                    player.y + player.size/2,
+                    this.projectileDamage,
+                    PROJECTILE_SPEED * 0.8,
+                    '#8a2be2' // Фиолетовый цвет для пещерного босса
+                );
+                
+                this.projectiles.push(projectile);
+                
+                // Иногда создаем несколько снарядов
+                if (Math.random() < 0.3) {
+                    // Создаем еще 2 снаряда под небольшим углом
+                    const angle1 = Math.atan2(
+                        player.y + player.size/2 - this.y,
+                        player.x + player.size/2 - this.x
+                    ) + 0.3;
+                    
+                    const angle2 = Math.atan2(
+                        player.y + player.size/2 - this.y,
+                        player.x + player.size/2 - this.x
+                    ) - 0.3;
+                    
+                    const projectile1 = new Projectile(
+                        this.x,
+                        this.y,
+                        this.x + Math.cos(angle1) * 100,
+                        this.y + Math.sin(angle1) * 100,
+                        this.projectileDamage,
+                        PROJECTILE_SPEED * 0.8,
+                        '#8a2be2'
+                    );
+                    
+                    const projectile2 = new Projectile(
+                        this.x,
+                        this.y,
+                        this.x + Math.cos(angle2) * 100,
+                        this.y + Math.sin(angle2) * 100,
+                        this.projectileDamage,
+                        PROJECTILE_SPEED * 0.8,
+                        '#8a2be2'
+                    );
+                    
+                    this.projectiles.push(projectile1, projectile2);
+                }
+            }
+            
+            draw(ctx, camera) {
+                if (!this.alive) return;
+                
+                // Тело пещерного босса (большой фиолетовый круг с текстурами)
+                ctx.fillStyle = '#8a2be2';
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x,
+                    this.y - camera.y,
+                    this.size / 2,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                // Текстура на теле
+                ctx.fillStyle = '#6a1bb9';
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2;
+                    const spikeLength = this.size / 3;
+                    ctx.beginPath();
+                    ctx.moveTo(
+                        this.x - camera.x + Math.cos(angle) * (this.size / 2 - 5),
+                        this.y - camera.y + Math.sin(angle) * (this.size / 2 - 5)
+                    );
+                    ctx.lineTo(
+                        this.x - camera.x + Math.cos(angle) * (this.size / 2 + spikeLength),
+                        this.y - camera.y + Math.sin(angle) * (this.size / 2 + spikeLength)
+                    );
+                    ctx.lineTo(
+                        this.x - camera.x + Math.cos(angle + 0.3) * (this.size / 2),
+                        this.y - camera.y + Math.sin(angle + 0.3) * (this.size / 2)
+                    );
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                
+                // Глаза пещерного босса (светящиеся)
+                ctx.fillStyle = '#00ffff';
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x - 18,
+                    this.y - camera.y - 12,
+                    10,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x + 18,
+                    this.y - camera.y - 12,
+                    10,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                // Зрачки
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x - 18,
+                    this.y - camera.y - 12,
+                    4,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x + 18,
+                    this.y - camera.y - 12,
+                    4,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                // Рот (больше и страшнее)
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x,
+                    this.y - camera.y + 15,
+                    20,
+                    0,
+                    Math.PI,
+                    false
+                );
+                ctx.fill();
+                
+                // Зубы
+                ctx.fillStyle = '#fff';
+                for (let i = 0; i < 6; i++) {
+                    const toothX = this.x - camera.x - 15 + i * 6;
+                    ctx.fillRect(toothX, this.y - camera.y + 15, 3, 8);
+                }
+                
+                // Рисуем снаряды
+                for (const projectile of this.projectiles) {
+                    projectile.draw(ctx, camera);
+                }
+                
+                // Полоска здоровья
+                this.drawHealthBar(ctx, camera);
             }
         }
         
@@ -1694,9 +2058,10 @@
                 this.craftingSystem = new CraftingSystem();
                 this.camera = new Camera();
                 this.boss = null;
+                this.caveBoss = null;
                 this.bossSpawned = false;
+                this.caveBossSpawned = false;
                 this.gameOver = false;
-                this.gameWon = false;
                 this.lastTime = 0;
                 this.showSmeltHint = false;
                 this.showLevelChangeHint = false;
@@ -1783,14 +2148,18 @@
                         
                         // Если открыто меню крафта, клик обрабатывается там
                         if (!this.craftingSystem.isOpen) {
-                            // Если выбран молот и есть босс, атакуем
-                            if (this.boss && this.boss.alive && this.player.currentLevel === WORLD_LEVELS.SURFACE) {
-                                const selectedItem = this.player.inventory.getSelectedItem();
-                                if ((selectedItem.type === ITEM_TYPES.HAMMER || 
-                                     selectedItem.type === ITEM_TYPES.IRON_HAMMER) && 
-                                    this.player.canAttack()) {
-                                    const worldX = this.mouse.x + this.camera.x;
-                                    const worldY = this.mouse.y + this.camera.y;
+                            // Если выбран молот и есть босс на текущем уровне, атакуем
+                            const selectedItem = this.player.inventory.getSelectedItem();
+                            const canAttackWithHammer = selectedItem.type === ITEM_TYPES.HAMMER || 
+                                                       selectedItem.type === ITEM_TYPES.IRON_HAMMER;
+                            
+                            if (canAttackWithHammer && this.player.canAttack()) {
+                                const worldX = this.mouse.x + this.camera.x;
+                                const worldY = this.mouse.y + this.camera.y;
+                                
+                                // Проверяем босса на поверхности
+                                if (this.player.currentLevel === WORLD_LEVELS.SURFACE && 
+                                    this.boss && this.boss.alive) {
                                     const dx = worldX - this.boss.x;
                                     const dy = worldY - this.boss.y;
                                     const distance = Math.sqrt(dx * dx + dy * dy);
@@ -1802,17 +2171,34 @@
                                         this.showStatus('Босс атакован!');
                                         
                                         if (!this.boss.alive) {
-                                            this.gameWon = true;
-                                            this.showStatus('ПОБЕДА! Босс побежден!');
+                                            this.showStatus('Босс поверхности побежден!');
                                         }
+                                        return;
                                     }
-                                    return;
+                                }
+                                
+                                // Проверяем пещерного босса
+                                if (this.player.currentLevel === WORLD_LEVELS.CAVE && 
+                                    this.caveBoss && this.caveBoss.alive) {
+                                    const dx = worldX - this.caveBoss.x;
+                                    const dy = worldY - this.caveBoss.y;
+                                    const distance = Math.sqrt(dx * dx + dy * dy);
+                                    
+                                    if (distance < 120) { // Больший радиус для пещерного босса
+                                        const damage = selectedItem.type === ITEM_TYPES.IRON_HAMMER ? 35 : 25;
+                                        this.caveBoss.takeDamage(damage);
+                                        this.player.attack();
+                                        this.showStatus('Пещерный босс атакован!');
+                                        
+                                        if (!this.caveBoss.alive) {
+                                            this.showStatus('Пещерный босс побежден!');
+                                        }
+                                        return;
+                                    }
                                 }
                             }
                             
                             // Использование инструментов на ЛКМ
-                            const selectedItem = this.player.inventory.getSelectedItem();
-                            
                             // Использование лопаты для создания шахты
                             if (selectedItem.type === ITEM_TYPES.SHOVEL && this.player.currentLevel === WORLD_LEVELS.SURFACE) {
                                 this.useShovel();
@@ -1986,9 +2372,13 @@
                             const itemName = ITEM_NAMES[itemType];
                             this.showStatus(`Построено: ${itemName}`);
                             
-                            // Если построен алтарь, спауним босса
-                            if (itemType === ITEM_TYPES.ALTAR && !this.bossSpawned) {
-                                this.spawnBoss();
+                            // Если построен алтарь, спауним соответствующего босса
+                            if (itemType === ITEM_TYPES.ALTAR) {
+                                if (this.player.currentLevel === WORLD_LEVELS.SURFACE && !this.bossSpawned) {
+                                    this.spawnBoss();
+                                } else if (this.player.currentLevel === WORLD_LEVELS.CAVE && !this.caveBossSpawned) {
+                                    this.spawnCaveBoss();
+                                }
                             }
                         } else {
                             // Если не удалось удалить предмет из инвентаря, удаляем построенный тайл
@@ -2148,7 +2538,49 @@
                 
                 this.boss = new Boss(spawnX, spawnY);
                 this.bossSpawned = true;
-                this.showStatus('БОСС ПОЯВИЛСЯ! Приготовьтесь к битве!');
+                this.showStatus('БОСС ПОВЕРХНОСТИ ПОЯВИЛСЯ! Приготовьтесь к битве!');
+            }
+            
+            spawnCaveBoss() {
+                // Спауним пещерного босса в пещере
+                let spawnX, spawnY;
+                let attempts = 0;
+                const maxAttempts = 30;
+                
+                do {
+                    spawnX = Math.random() * (WORLD_WIDTH * TILE_SIZE - 200) + 100;
+                    spawnY = Math.random() * (WORLD_HEIGHT * TILE_SIZE - 200) + 100;
+                    attempts++;
+                    
+                    // Проверяем, что позиция в пещере (на полу) и не слишком близко к игроку
+                    const tileType = this.world.getTileAt(spawnX, spawnY, WORLD_LEVELS.CAVE);
+                    const dx = spawnX - this.player.x;
+                    const dy = spawnY - this.player.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (tileType === CAVE_TILE_TYPES.CAVE_FLOOR && distance > TILE_SIZE * 8) {
+                        // Проверяем, нет ли препятствий вокруг
+                        let clearArea = true;
+                        for (let dy = -2; dy <= 2 && clearArea; dy++) {
+                            for (let dx = -2; dx <= 2 && clearArea; dx++) {
+                                const checkX = spawnX + dx * TILE_SIZE;
+                                const checkY = spawnY + dy * TILE_SIZE;
+                                const checkTile = this.world.getTileAt(checkX, checkY, WORLD_LEVELS.CAVE);
+                                if (checkTile !== CAVE_TILE_TYPES.CAVE_FLOOR) {
+                                    clearArea = false;
+                                }
+                            }
+                        }
+                        
+                        if (clearArea) {
+                            break;
+                        }
+                    }
+                } while (attempts < maxAttempts);
+                
+                this.caveBoss = new CaveBoss(spawnX, spawnY);
+                this.caveBossSpawned = true;
+                this.showStatus('ПЕЩЕРНЫЙ БОСС ПОЯВИЛСЯ! Остерегайтесь его снарядов!');
             }
             
             showStatus(message) {
@@ -2159,7 +2591,7 @@
             
             update(deltaTime) {
                 // Если игра окончена, не обновляем
-                if (this.gameOver || this.gameWon) return;
+                if (this.gameOver) return;
                 
                 // Обновляем игрока
                 this.player.update(this.keys, this.world, deltaTime);
@@ -2167,15 +2599,20 @@
                 // Обновляем камеру
                 this.camera.update(this.player);
                 
-                // Обновляем босса
+                // Обновляем босса поверхности
                 if (this.boss && this.boss.alive && this.player.currentLevel === WORLD_LEVELS.SURFACE) {
                     this.boss.update(this.player, deltaTime);
-                    
-                    // Проверяем смерть игрока от босса
-                    if (this.player.health <= 0) {
-                        this.gameOver = true;
-                        this.showStatus('ВЫ ПРОИГРАЛИ! Босс победил.');
-                    }
+                }
+                
+                // Обновляем пещерного босса
+                if (this.caveBoss && this.caveBoss.alive && this.player.currentLevel === WORLD_LEVELS.CAVE) {
+                    this.caveBoss.update(this.player, deltaTime);
+                }
+                
+                // Проверяем смерть игрока
+                if (this.player.health <= 0) {
+                    this.gameOver = true;
+                    this.showStatus('ВЫ ПРОИГРАЛИ! Обновите страницу для перезапуска.');
                 }
                 
                 // Проверяем, рядом ли печка
@@ -2205,9 +2642,14 @@
                 // Рисуем мир (текущий уровень)
                 this.world.draw(this.ctx, this.camera, this.player.currentLevel);
                 
-                // Рисуем босса (только на поверхности)
+                // Рисуем босса поверхности (только на поверхности)
                 if (this.boss && this.boss.alive && this.player.currentLevel === WORLD_LEVELS.SURFACE) {
                     this.boss.draw(this.ctx, this.camera);
+                }
+                
+                // Рисуем пещерного босса (только в пещере)
+                if (this.caveBoss && this.caveBoss.alive && this.player.currentLevel === WORLD_LEVELS.CAVE) {
+                    this.caveBoss.draw(this.ctx, this.camera);
                 }
                 
                 // Рисуем игрока
@@ -2226,11 +2668,9 @@
                 // Рисуем меню крафта
                 this.craftingSystem.draw(this.ctx);
                 
-                // Рисуем экран победы/поражения
+                // Рисуем экран поражения
                 if (this.gameOver) {
                     this.drawGameOver();
-                } else if (this.gameWon) {
-                    this.drawGameWon();
                 }
                 
                 // Рисуем подсказки
@@ -2398,20 +2838,45 @@
                             }
                         }
                     } else if ((selectedItem.type === ITEM_TYPES.HAMMER || 
-                              selectedItem.type === ITEM_TYPES.IRON_HAMMER) && 
-                             this.boss && this.boss.alive && 
-                             this.player.currentLevel === WORLD_LEVELS.SURFACE) {
+                              selectedItem.type === ITEM_TYPES.IRON_HAMMER)) {
                         // Прицел для атаки босса
-                        this.ctx.strokeStyle = selectedItem.type === ITEM_TYPES.IRON_HAMMER ? '#FFD700' : '#f44';
-                        this.ctx.lineWidth = 2;
-                        this.ctx.beginPath();
-                        this.ctx.arc(this.mouse.x, this.mouse.y, 15, 0, Math.PI * 2);
-                        this.ctx.stroke();
+                        let bossToAttack = null;
+                        let attackRadius = 100;
                         
-                        this.ctx.fillStyle = selectedItem.type === ITEM_TYPES.IRON_HAMMER ? '#FFD700' : '#f44';
-                        this.ctx.font = '12px Courier New';
-                        this.ctx.textAlign = 'center';
-                        this.ctx.fillText('Атаковать', this.mouse.x, this.mouse.y - 25);
+                        if (this.player.currentLevel === WORLD_LEVELS.SURFACE && this.boss && this.boss.alive) {
+                            bossToAttack = this.boss;
+                        } else if (this.player.currentLevel === WORLD_LEVELS.CAVE && this.caveBoss && this.caveBoss.alive) {
+                            bossToAttack = this.caveBoss;
+                            attackRadius = 120; // Больший радиус для пещерного босса
+                        }
+                        
+                        if (bossToAttack) {
+                            const worldX = this.mouse.x + this.camera.x;
+                            const worldY = this.mouse.y + this.camera.y;
+                            const dx = worldX - bossToAttack.x;
+                            const dy = worldY - bossToAttack.y;
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+                            const canAttack = distance < attackRadius;
+                            
+                            this.ctx.strokeStyle = selectedItem.type === ITEM_TYPES.IRON_HAMMER ? 
+                                (canAttack ? '#FFD700' : '#888') : 
+                                (canAttack ? '#f44' : '#888');
+                            this.ctx.lineWidth = 2;
+                            this.ctx.beginPath();
+                            this.ctx.arc(this.mouse.x, this.mouse.y, 15, 0, Math.PI * 2);
+                            this.ctx.stroke();
+                            
+                            this.ctx.fillStyle = selectedItem.type === ITEM_TYPES.IRON_HAMMER ? 
+                                (canAttack ? '#FFD700' : '#888') : 
+                                (canAttack ? '#f44' : '#888');
+                            this.ctx.font = '12px Courier New';
+                            this.ctx.textAlign = 'center';
+                            this.ctx.fillText('Атаковать босса', this.mouse.x, this.mouse.y - 25);
+                            
+                            if (!canAttack) {
+                                this.ctx.fillText('Подойдите ближе к боссу!', this.mouse.x, this.mouse.y + 25);
+                            }
+                        }
                     }
                 }
                 
@@ -2424,6 +2889,49 @@
                     this.ctx.font = '16px Courier New';
                     this.ctx.textAlign = 'center';
                     this.ctx.fillText(this.statusMessage, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 20);
+                }
+                
+                // Отображаем информацию о побежденных боссах
+                this.drawBossInfo();
+            }
+            
+            drawBossInfo() {
+                const infoX = CANVAS_WIDTH - 180;
+                const infoY = 20;
+                const infoWidth = 160;
+                const infoHeight = 80;
+                
+                // Фон информации о боссах
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                this.ctx.fillRect(infoX, infoY, infoWidth, infoHeight);
+                
+                this.ctx.fillStyle = '#fff';
+                this.ctx.font = 'bold 14px Courier New';
+                this.ctx.textAlign = 'left';
+                this.ctx.fillText('Статус боссов:', infoX + 10, infoY + 20);
+                
+                this.ctx.font = '12px Courier New';
+                
+                // Босс поверхности
+                if (this.boss) {
+                    const surfaceStatus = this.boss.alive ? 'Жив' : 'Побежден';
+                    const surfaceColor = this.boss.alive ? '#f44' : '#8f8';
+                    this.ctx.fillStyle = surfaceColor;
+                    this.ctx.fillText(`Поверхность: ${surfaceStatus}`, infoX + 10, infoY + 40);
+                } else {
+                    this.ctx.fillStyle = '#aaa';
+                    this.ctx.fillText('Поверхность: Не вызван', infoX + 10, infoY + 40);
+                }
+                
+                // Пещерный босс
+                if (this.caveBoss) {
+                    const caveStatus = this.caveBoss.alive ? 'Жив' : 'Побежден';
+                    const caveColor = this.caveBoss.alive ? '#f44' : '#8f8';
+                    this.ctx.fillStyle = caveColor;
+                    this.ctx.fillText(`Пещера: ${caveStatus}`, infoX + 10, infoY + 60);
+                } else {
+                    this.ctx.fillStyle = '#aaa';
+                    this.ctx.fillText('Пещера: Не вызван', infoX + 10, infoY + 60);
                 }
             }
             
@@ -2439,21 +2947,6 @@
                 this.ctx.fillStyle = '#fff';
                 this.ctx.font = '24px Courier New';
                 this.ctx.fillText('Обновите страницу для перезапуска', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 40);
-            }
-            
-            drawGameWon() {
-                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-                this.ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-                
-                this.ctx.fillStyle = '#4af';
-                this.ctx.font = 'bold 48px Courier New';
-                this.ctx.textAlign = 'center';
-                this.ctx.fillText('ПОБЕДА!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 40);
-                
-                this.ctx.fillStyle = '#fff';
-                this.ctx.font = '24px Courier New';
-                this.ctx.fillText('Босс побежден!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
-                this.ctx.fillText('Обновите страницу для перезапуска', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 60);
             }
             
             gameLoop(timestamp) {
