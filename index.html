@@ -122,19 +122,15 @@
                 </ul>
             </div>
             <div class="control-group">
-                <h2>Цели</h2>
+                <h2>Новые особенности</h2>
                 <ul>
-                    <li>1. Соберите дерево и камень</li>
-                    <li>2. Создайте лопату (2x дерево + 1x камень)</li>
-                    <li>3. Создайте шахту (используйте лопату на траве)</li>
-                    <li>4. Спуститесь в пещеру за рудой</li>
-                    <li>5. Создайте кирку (3x камень)</li>
-                    <li>6. Добудьте железную руду и уголь</li>
-                    <li>7. Постройте печку (5x камень)</li>
-                    <li>8. Плавьте железо в слитки (уголь + руда)</li>
-                    <li>9. Создайте железный молот и факелы</li>
-                    <li>10. Постройте алтарь и победите босса!</li>
-                    <li>11. Постройте алтарь в пещере для вызова пещерного босса!</li>
+                    <li>Улучшенная кирка выпадает с первого босса</li>
+                    <li>Улучшенная кирка ломает алтари (возвращает в инвентарь)</li>
+                    <li>Улучшенная кирка копает 3 тайла за раз</li>
+                    <li>Скипетр пещерного босса имеет увеличенный урон</li>
+                    <li>10% шанс получить алтарь возрождения с зомби</li>
+                    <li>Установите алтарь возрождения для точки респавна</li>
+                    <li>Информация о боссах удалена из интерфейса</li>
                 </ul>
             </div>
         </div>
@@ -154,7 +150,7 @@
         const PLAYER_SPEED = 4;
         const BOSS_SIZE = 64;
         const CAVE_BOSS_SIZE = 72;
-        const PROJECTILE_SIZE = 12;
+        const PROJECTILE_SIZE = 20; // Увеличен с 12 до 20
         const PROJECTILE_SPEED = 3;
         const DAY_DURATION = 300000; // 5 минут день
         const NIGHT_DURATION = 180000; // 3 минуты ночь
@@ -208,7 +204,9 @@
             LADDER: 14,
             IRON_HAMMER: 15,
             TORCH: 16,
-            MAGIC_SCEPTER: 17
+            MAGIC_SCEPTER: 17,
+            IMPROVED_PICKAXE: 18, // Новая улучшенная кирка
+            RESURRECTION_ALTAR: 19 // Новый алтарь возрождения
         };
         
         // Названия предметов
@@ -230,7 +228,9 @@
             [ITEM_TYPES.LADDER]: "Лестница",
             [ITEM_TYPES.IRON_HAMMER]: "Железный молот",
             [ITEM_TYPES.TORCH]: "Факел",
-            [ITEM_TYPES.MAGIC_SCEPTER]: "Волшебный скипетр"
+            [ITEM_TYPES.MAGIC_SCEPTER]: "Волшебный скипетр",
+            [ITEM_TYPES.IMPROVED_PICKAXE]: "Улучшенная кирка",
+            [ITEM_TYPES.RESURRECTION_ALTAR]: "Алтарь возрождения"
         };
         
         // Цвета предметов
@@ -252,7 +252,9 @@
             [ITEM_TYPES.LADDER]: "#D2B48C",
             [ITEM_TYPES.IRON_HAMMER]: "#C0C0C0",
             [ITEM_TYPES.TORCH]: "#FFA500",
-            [ITEM_TYPES.MAGIC_SCEPTER]: "#9370DB"
+            [ITEM_TYPES.MAGIC_SCEPTER]: "#9370DB",
+            [ITEM_TYPES.IMPROVED_PICKAXE]: "#FFD700", // Золотой цвет для улучшенной кирки
+            [ITEM_TYPES.RESURRECTION_ALTAR]: "#00FF00" // Зеленый для алтаря возрождения
         };
         
         // Рецепты крафта
@@ -361,6 +363,9 @@
                 this.lastMagicAttackTime = 0;
                 this.magicAttackCooldown = 800; // мс
                 this.projectiles = [];
+                this.respawnX = WORLD_WIDTH * TILE_SIZE / 2; // Точка возрождения по умолчанию
+                this.respawnY = WORLD_HEIGHT * TILE_SIZE / 2;
+                this.respawnLevel = WORLD_LEVELS.SURFACE;
             }
             
             update(keys, world, deltaTime, gameTime) {
@@ -569,18 +574,35 @@
                 
                 const playerCenterX = this.x + this.size / 2;
                 const playerCenterY = this.y + this.size / 2;
+                // Увеличен урон с 15 до 25 и размер снаряда
                 const projectile = new Projectile(
                     playerCenterX,
                     playerCenterY,
                     targetX,
                     targetY,
-                    15, // Урон снаряда
+                    25, // Увеличенный урон снаряда
                     PROJECTILE_SPEED * 1.2,
-                    '#9370DB' // Фиолетовый цвет для магического снаряда
+                    '#9370DB', // Фиолетовый цвет для магического снаряда
+                    20 // Увеличенный размер
                 );
                 
                 this.projectiles.push(projectile);
                 this.magicAttack();
+            }
+            
+            respawn() {
+                this.x = this.respawnX;
+                this.y = this.respawnY;
+                this.currentLevel = this.respawnLevel;
+                this.health = this.maxHealth;
+                this.isInvulnerable = true;
+                this.invulnerabilityTimer = 2000; // 2 секунды неуязвимости после возрождения
+            }
+            
+            setRespawnPoint(x, y, level) {
+                this.respawnX = x;
+                this.respawnY = y;
+                this.respawnLevel = level;
             }
             
             draw(ctx, camera, gameTime) {
@@ -1137,7 +1159,7 @@
                     return tileType === TILE_TYPES.STONE || tileType === TILE_TYPES.TREE;
                 } else if (level === WORLD_LEVELS.CAVE) {
                     // В пещере нужна кирка для добычи руды
-                    if (toolType === ITEM_TYPES.PICKAXE) {
+                    if (toolType === ITEM_TYPES.PICKAXE || toolType === ITEM_TYPES.IMPROVED_PICKAXE) {
                         return tileType === CAVE_TILE_TYPES.IRON_ORE || 
                                tileType === CAVE_TILE_TYPES.COAL_ORE ||
                                tileType === CAVE_TILE_TYPES.CAVE_WALL;
@@ -1168,7 +1190,7 @@
                     } else if (level === WORLD_LEVELS.CAVE) {
                         const tileType = this.caveTiles[tileY][tileX];
                         
-                        if (toolType === ITEM_TYPES.PICKAXE) {
+                        if (toolType === ITEM_TYPES.PICKAXE || toolType === ITEM_TYPES.IMPROVED_PICKAXE) {
                             if (tileType === CAVE_TILE_TYPES.IRON_ORE) {
                                 this.caveTiles[tileY][tileX] = CAVE_TILE_TYPES.CAVE_FLOOR;
                                 return ITEM_TYPES.IRON_ORE;
@@ -1304,6 +1326,65 @@
                 }
                 
                 return false;
+            }
+            
+            // Метод для разрушения алтаря улучшенной киркой
+            breakAltar(x, y, level) {
+                const tileX = Math.floor(x / TILE_SIZE);
+                const tileY = Math.floor(y / TILE_SIZE);
+                const key = `${tileX},${tileY}`;
+                
+                if (level === WORLD_LEVELS.SURFACE) {
+                    if (this.surfacePlacedTiles.has(key)) {
+                        const itemType = this.surfacePlacedTiles.get(key);
+                        if (itemType === ITEM_TYPES.ALTAR || itemType === ITEM_TYPES.RESURRECTION_ALTAR) {
+                            this.surfacePlacedTiles.delete(key);
+                            return itemType;
+                        }
+                    }
+                } else if (level === WORLD_LEVELS.CAVE) {
+                    if (this.cavePlacedTiles.has(key)) {
+                        const itemType = this.cavePlacedTiles.get(key);
+                        if (itemType === ITEM_TYPES.ALTAR || itemType === ITEM_TYPES.RESURRECTION_ALTAR) {
+                            this.cavePlacedTiles.delete(key);
+                            return itemType;
+                        }
+                    }
+                }
+                return ITEM_TYPES.NONE;
+            }
+            
+            // Метод для копания 3 тайлов улучшенной киркой
+            digArea(x, y, level) {
+                const tileX = Math.floor(x / TILE_SIZE);
+                const tileY = Math.floor(y / TILE_SIZE);
+                const minedItems = [];
+                
+                // Копаем область 3x3
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        const nx = tileX + dx;
+                        const ny = tileY + dy;
+                        
+                        if (nx >= 0 && nx < WORLD_WIDTH && ny >= 0 && ny < WORLD_HEIGHT) {
+                            if (level === WORLD_LEVELS.CAVE) {
+                                const tileType = this.caveTiles[ny][nx];
+                                if (tileType === CAVE_TILE_TYPES.IRON_ORE) {
+                                    this.caveTiles[ny][nx] = CAVE_TILE_TYPES.CAVE_FLOOR;
+                                    minedItems.push(ITEM_TYPES.IRON_ORE);
+                                } else if (tileType === CAVE_TILE_TYPES.COAL_ORE) {
+                                    this.caveTiles[ny][nx] = CAVE_TILE_TYPES.CAVE_FLOOR;
+                                    minedItems.push(ITEM_TYPES.COAL);
+                                } else if (tileType === CAVE_TILE_TYPES.CAVE_WALL) {
+                                    this.caveTiles[ny][nx] = CAVE_TILE_TYPES.CAVE_FLOOR;
+                                    minedItems.push(ITEM_TYPES.STONE);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                return minedItems;
             }
             
             draw(ctx, camera, level, gameTime) {
@@ -1671,7 +1752,7 @@
                         ctx.fillStyle = '#8B4513';
                         ctx.fillRect(x + 14, y + 20, 4, 12);
                         
-                        // Пламя факела
+                        // Пламя факла
                         const flameSize = 6 + Math.sin(Date.now() / 200) * 2;
                         ctx.fillStyle = '#FF4500';
                         ctx.beginPath();
@@ -1683,7 +1764,31 @@
                         ctx.arc(x + TILE_SIZE/2, y + 18, flameSize * 0.6, 0, Math.PI * 2);
                         ctx.fill();
                         
-                        // Свет факела (рисуется отдельно в drawTorchLight)
+                        // Свет факла (рисуется отдельно в drawTorchLight)
+                        break;
+                        
+                    case ITEM_TYPES.RESURRECTION_ALTAR:
+                        // Алтарь возрождения
+                        ctx.fillStyle = '#00FF00';
+                        ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                        ctx.fillStyle = '#008800';
+                        ctx.fillRect(x + 4, y + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+                        
+                        // Символ возрождения
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.beginPath();
+                        ctx.arc(x + TILE_SIZE/2, y + TILE_SIZE/2, 8, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        ctx.fillStyle = '#00FF00';
+                        ctx.beginPath();
+                        ctx.arc(x + TILE_SIZE/2, y + TILE_SIZE/2, 4, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Крест (символ возрождения)
+                        ctx.fillStyle = '#008800';
+                        ctx.fillRect(x + TILE_SIZE/2 - 1, y + 10, 2, 12);
+                        ctx.fillRect(x + 10, y + TILE_SIZE/2 - 1, 12, 2);
                         break;
                 }
             }
@@ -1743,10 +1848,10 @@
         // КЛАСС ПРОДЖЕКТАЙЛА
         // ============================
         class Projectile {
-            constructor(x, y, targetX, targetY, damage, speed = PROJECTILE_SPEED, color = '#ff4444') {
+            constructor(x, y, targetX, targetY, damage, speed = PROJECTILE_SPEED, color = '#ff4444', size = PROJECTILE_SIZE) {
                 this.x = x;
                 this.y = y;
-                this.size = PROJECTILE_SIZE;
+                this.size = size; // Используем переданный размер
                 this.damage = damage;
                 this.speed = speed;
                 this.color = color;
@@ -1887,11 +1992,11 @@
                     this.health = 0;
                     this.alive = false;
                     
-                    // Дроп предмета (только для пещерного босса)
-                    if (this.isCaveBoss && Math.random() < 1.0) { // 100% шанс для тестирования
-                        // Добавляем магический скипетр в инвентарь игрока
-                        if (game.player.inventory.addItem(ITEM_TYPES.MAGIC_SCEPTER, 1)) {
-                            game.showStatus('Получен: Волшебный скипетр! Используйте ЛКМ для стрельбы снарядами.');
+                    // Дроп улучшенной кирки с первого босса
+                    if (!this.isCaveBoss && Math.random() < 1.0) { // 100% шанс
+                        // Добавляем улучшенную кирку в инвентарь игрока
+                        if (game.player.inventory.addItem(ITEM_TYPES.IMPROVED_PICKAXE, 1)) {
+                            game.showStatus('Получена: Улучшенная кирка! ЛКМ: ломает алтари и копает 3 тайла.');
                         }
                     }
                 }
@@ -1968,34 +2073,6 @@
                     Math.PI
                 );
                 ctx.stroke();
-                
-                // Полоска здоровья
-                this.drawHealthBar(ctx, camera);
-            }
-            
-            drawHealthBar(ctx, camera) {
-                const barWidth = 100;
-                const barHeight = 8;
-                const barX = this.x - camera.x - barWidth / 2;
-                const barY = this.y - camera.y - this.size / 2 - 15;
-                
-                ctx.fillStyle = '#333';
-                ctx.fillRect(barX, barY, barWidth, barHeight);
-                
-                const healthWidth = (this.health / this.maxHealth) * barWidth;
-                ctx.fillStyle = this.health > 50 ? '#2ecc71' : this.health > 20 ? '#f39c12' : '#e74c3c';
-                ctx.fillRect(barX, barY, healthWidth, barHeight);
-                
-                ctx.strokeStyle = '#fff';
-                ctx.lineWidth = 1;
-                ctx.strokeRect(barX, barY, barWidth, barHeight);
-                
-                // Текст с названием босса
-                ctx.fillStyle = '#fff';
-                ctx.font = 'bold 12px Courier New';
-                ctx.textAlign = 'center';
-                const bossName = this.isCaveBoss ? 'Пещерный Босс' : 'Босс Поверхности';
-                ctx.fillText(bossName, this.x - camera.x, barY - 5);
             }
         }
         
@@ -2013,7 +2090,7 @@
                 this.projectiles = [];
                 this.lastProjectileTime = 0;
                 this.projectileCooldown = 2000; // мс
-                this.projectileDamage = 10;
+                this.projectileDamage = 15; // Увеличен урон с 10 до 15
                 this.isCaveBoss = true;
             }
             
@@ -2227,9 +2304,6 @@
                 for (const projectile of this.projectiles) {
                     projectile.draw(ctx, camera);
                 }
-                
-                // Полоска здоровья
-                this.drawHealthBar(ctx, camera);
             }
         }
         
@@ -2297,6 +2371,13 @@
                             if (Math.random() < 0.5) {
                                 game.player.inventory.addItem(ITEM_TYPES.COAL, 1);
                             }
+                            
+                            // 10% шанс выбить алтарь возрождения
+                            if (Math.random() < 0.1) {
+                                if (game.player.inventory.addItem(ITEM_TYPES.RESURRECTION_ALTAR, 1)) {
+                                    game.showStatus('Получен: Алтарь возрождения! Установите для точки респавна.');
+                                }
+                            }
                         } else if (this.type === 'skeleton') {
                             // Скелет дропает камень
                             if (Math.random() < 0.5) {
@@ -2322,7 +2403,7 @@
                 );
                 ctx.fill();
                 
-                // Глаза моба
+                // Глазы моба
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
                 ctx.arc(
@@ -2958,7 +3039,7 @@
                                         this.showStatus('Босс атакован!');
                                         
                                         if (!this.boss.alive) {
-                                            this.showStatus('Босс поверхности побежден!');
+                                            this.showStatus('Босс поверхности побежден! Получена улучшенная кирка!');
                                         }
                                         return;
                                     }
@@ -2978,7 +3059,7 @@
                                         this.showStatus('Пещерный босс атакован!');
                                         
                                         if (!this.caveBoss.alive) {
-                                            this.showStatus('Пещерный босс побежден!');
+                                            this.showStatus('Пещерный босс побежден! Получен волшебный скипетр!');
                                         }
                                         return;
                                     }
@@ -3034,6 +3115,12 @@
                                 // Если никого не атаковали, просто используем атаку (например, для разрушения чего-то в будущем)
                                 this.player.attack();
                                 this.showStatus('Атака!');
+                                return;
+                            }
+                            
+                            // Использование улучшенной кирки
+                            if (selectedItem.type === ITEM_TYPES.IMPROVED_PICKAXE) {
+                                this.useImprovedPickaxe();
                                 return;
                             }
                             
@@ -3167,13 +3254,61 @@
                 }
             }
             
+            useImprovedPickaxe() {
+                // Использование улучшенной кирки
+                const worldX = this.mouse.x + this.camera.x;
+                const worldY = this.mouse.y + this.camera.y;
+                
+                // Проверяем, находится ли позиция в темноте (только для пещеры)
+                if (this.player.currentLevel === WORLD_LEVELS.CAVE && 
+                    this.player.isPositionInDarkness(worldX, worldY, this.world, this.gameTime)) {
+                    this.showStatus('Слишком темно! Подойдите ближе или поставьте факел.');
+                    return;
+                }
+                
+                // Проверяем, можно ли разрушить алтарь
+                const altarType = this.world.breakAltar(worldX, worldY, this.player.currentLevel);
+                if (altarType !== ITEM_TYPES.NONE) {
+                    // Возвращаем алтарь в инвентарь
+                    if (this.player.inventory.addItem(altarType, 1)) {
+                        const itemName = ITEM_NAMES[altarType];
+                        this.showStatus(`Алтарь разрушен! Возвращено: ${itemName}`);
+                    } else {
+                        this.showStatus('Инвентарь полон!');
+                    }
+                    return;
+                }
+                
+                // Если в пещере, копаем область 3x3
+                if (this.player.currentLevel === WORLD_LEVELS.CAVE) {
+                    const minedItems = this.world.digArea(worldX, worldY, this.player.currentLevel);
+                    if (minedItems.length > 0) {
+                        let itemsAdded = 0;
+                        for (const itemType of minedItems) {
+                            if (this.player.inventory.addItem(itemType, 1)) {
+                                itemsAdded++;
+                            }
+                        }
+                        if (itemsAdded > 0) {
+                            this.showStatus(`Улучшенная кирка добыла ${itemsAdded} ресурсов!`);
+                        } else {
+                            this.showStatus('Инвентарь полон!');
+                        }
+                    } else {
+                        this.showStatus('Здесь нечего добывать!');
+                    }
+                } else {
+                    this.showStatus('Улучшенная кирка работает только в пещере!');
+                }
+            }
+            
             placeBuilding() {
                 const selectedItem = this.player.inventory.getSelectedItem();
                 
                 // Проверяем, можно ли разместить этот предмет
                 const placeableItems = [
                     ITEM_TYPES.WALL, ITEM_TYPES.ALTAR, ITEM_TYPES.FURNACE, 
-                    ITEM_TYPES.LADDER, ITEM_TYPES.TORCH
+                    ITEM_TYPES.LADDER, ITEM_TYPES.TORCH, ITEM_TYPES.RESURRECTION_ALTAR
                 ];
                 
                 if (placeableItems.includes(selectedItem.type)) {
@@ -3213,6 +3348,18 @@
                             const itemName = ITEM_NAMES[itemType];
                             this.showStatus(`Построено: ${itemName}`);
                             
+                            // Если построен алтарь возрождения, устанавливаем точку возрождения
+                            if (itemType === ITEM_TYPES.RESURRECTION_ALTAR) {
+                                const tileX = Math.floor(worldX / TILE_SIZE);
+                                const tileY = Math.floor(worldY / TILE_SIZE);
+                                this.player.setRespawnPoint(
+                                    tileX * TILE_SIZE + TILE_SIZE/2,
+                                    tileY * TILE_SIZE + TILE_SIZE/2,
+                                    this.player.currentLevel
+                                );
+                                this.showStatus('Точка возрождения установлена!');
+                            }
+                            
                             // Если построен алтарь, спауним соответствующего босса
                             if (itemType === ITEM_TYPES.ALTAR) {
                                 if (this.player.currentLevel === WORLD_LEVELS.SURFACE && !this.bossSpawned) {
@@ -3238,7 +3385,8 @@
                 } else if (selectedItem.type !== ITEM_TYPES.NONE && 
                           selectedItem.type !== ITEM_TYPES.SHOVEL && 
                           selectedItem.type !== ITEM_TYPES.PICKAXE &&
-                          selectedItem.type !== ITEM_TYPES.MAGIC_SCEPTER) {
+                          selectedItem.type !== ITEM_TYPES.MAGIC_SCEPTER &&
+                          selectedItem.type !== ITEM_TYPES.IMPROVED_PICKAXE) {
                     this.showStatus('Этот предмет нельзя построить!');
                 }
             }
@@ -3456,8 +3604,9 @@
                 
                 // Проверяем смерть игрока
                 if (this.player.health <= 0) {
-                    this.gameOver = true;
-                    this.showStatus('ВЫ ПРОИГРАЛИ! Обновите страницу для перезапуска.');
+                    // Возрождаем игрока
+                    this.player.respawn();
+                    this.showStatus('Вы возродились у алтаря возрождения!');
                 }
                 
                 // Проверяем, рядом ли печка
@@ -3512,10 +3661,7 @@
                 // Рисуем меню крафта
                 this.craftingSystem.draw(this.ctx);
                 
-                // Рисуем экран поражения
-                if (this.gameOver) {
-                    this.drawGameOver();
-                }
+                // Рисуем экран поражения (удалено, теперь игрок возрождается)
                 
                 // Рисуем подсказки
                 if (this.showSmeltHint && !this.craftingSystem.isOpen) {
@@ -3610,6 +3756,83 @@
                         }
                     }
                     
+                    // Прицел для улучшенной кирки
+                    else if (selectedItem.type === ITEM_TYPES.IMPROVED_PICKAXE) {
+                        const worldX = this.mouse.x + this.camera.x;
+                        const worldY = this.mouse.y + this.camera.y;
+                        const tileX = Math.floor(worldX / TILE_SIZE);
+                        const tileY = Math.floor(worldY / TILE_SIZE);
+                        
+                        let canUse = false;
+                        let message = 'Улучшенная кирка: ';
+                        
+                        // Проверяем, есть ли алтарь для разрушения
+                        const key = `${tileX},${tileY}`;
+                        if (this.player.currentLevel === WORLD_LEVELS.SURFACE) {
+                            if (this.world.surfacePlacedTiles.has(key)) {
+                                const itemType = this.world.surfacePlacedTiles.get(key);
+                                if (itemType === ITEM_TYPES.ALTAR || itemType === ITEM_TYPES.RESURRECTION_ALTAR) {
+                                    canUse = true;
+                                    message += 'разрушение алтаря';
+                                }
+                            }
+                        } else if (this.player.currentLevel === WORLD_LEVELS.CAVE) {
+                            if (this.world.cavePlacedTiles.has(key)) {
+                                const itemType = this.world.cavePlacedTiles.get(key);
+                                if (itemType === ITEM_TYPES.ALTAR || itemType === ITEM_TYPES.RESURRECTION_ALTAR) {
+                                    canUse = true;
+                                    message += 'разрушение алтаря';
+                                }
+                            } else {
+                                // В пещере можно копать область 3x3
+                                canUse = true;
+                                message += 'добыча области 3x3';
+                            }
+                        }
+                        
+                        // Проверяем темноту для пещеры
+                        if (this.player.currentLevel === WORLD_LEVELS.CAVE && 
+                            this.player.isPositionInDarkness(worldX, worldY, this.world, this.gameTime)) {
+                            canUse = false;
+                        }
+                        
+                        // Рисуем область 3x3
+                        for (let dy = -1; dy <= 1; dy++) {
+                            for (let dx = -1; dx <= 1; dx++) {
+                                const drawX = this.mouse.x + dx * TILE_SIZE - TILE_SIZE/2;
+                                const drawY = this.mouse.y + dy * TILE_SIZE - TILE_SIZE/2;
+                                
+                                ctx.strokeStyle = canUse ? '#FFD700' : '#888';
+                                ctx.lineWidth = 1;
+                                ctx.setLineDash([3, 3]);
+                                ctx.strokeRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+                                ctx.setLineDash([]);
+                            }
+                        }
+                        
+                        // Основной прямоугольник в центре
+                        ctx.strokeStyle = canUse ? '#FFD700' : '#888';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([5, 5]);
+                        ctx.strokeRect(
+                            this.mouse.x - TILE_SIZE/2, 
+                            this.mouse.y - TILE_SIZE/2, 
+                            TILE_SIZE, 
+                            TILE_SIZE
+                        );
+                        ctx.setLineDash([]);
+                        
+                        ctx.fillStyle = canUse ? '#FFD700' : '#888';
+                        ctx.font = '12px Courier New';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(message, this.mouse.x, this.mouse.y - 20);
+                        
+                        if (!canUse && this.player.currentLevel === WORLD_LEVELS.CAVE && 
+                            this.player.isPositionInDarkness(worldX, worldY, this.world, this.gameTime)) {
+                            ctx.fillText('Слишком темно! Подойдите ближе или поставьте факел.', this.mouse.x, this.mouse.y + TILE_SIZE + 15);
+                        }
+                    }
+                    
                     // Прицел для магического скипетра
                     else if (selectedItem.type === ITEM_TYPES.MAGIC_SCEPTER) {
                         ctx.strokeStyle = '#9370DB';
@@ -3627,7 +3850,7 @@
                     // Проверяем, можно ли построить этот предмет
                     const placeableItems = [
                         ITEM_TYPES.WALL, ITEM_TYPES.ALTAR, ITEM_TYPES.FURNACE, 
-                        ITEM_TYPES.LADDER, ITEM_TYPES.TORCH
+                        ITEM_TYPES.LADDER, ITEM_TYPES.TORCH, ITEM_TYPES.RESURRECTION_ALTAR
                     ];
                     
                     if (placeableItems.includes(selectedItem.type)) {
@@ -3810,8 +4033,8 @@
                     this.ctx.fillText(this.statusMessage, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 20);
                 }
                 
-                // Отображаем информацию о побежденных боссах
-                this.drawBossInfo();
+                // Отображаем информацию о точке возрождения
+                this.drawRespawnInfo();
                 
                 // Отображаем информацию о мобах (только ночью)
                 if (this.gameTime.currentTime === TIME_OF_DAY.NIGHT) {
@@ -3819,44 +4042,24 @@
                 }
             }
             
-            drawBossInfo() {
+            drawRespawnInfo() {
                 const infoX = CANVAS_WIDTH - 180;
                 const infoY = 50;
                 const infoWidth = 160;
-                const infoHeight = 80;
+                const infoHeight = 60;
                 
-                // Фон информации о боссах
+                // Фон информации о точке возрождения
                 this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
                 this.ctx.fillRect(infoX, infoY, infoWidth, infoHeight);
                 
-                this.ctx.fillStyle = '#fff';
+                this.ctx.fillStyle = '#00FF00';
                 this.ctx.font = 'bold 14px Courier New';
                 this.ctx.textAlign = 'left';
-                this.ctx.fillText('Статус боссов:', infoX + 10, infoY + 20);
+                this.ctx.fillText('Точка возрождения:', infoX + 10, infoY + 20);
                 
                 this.ctx.font = '12px Courier New';
-                
-                // Босс поверхности
-                if (this.boss) {
-                    const surfaceStatus = this.boss.alive ? 'Жив' : 'Побежден';
-                    const surfaceColor = this.boss.alive ? '#f44' : '#8f8';
-                    this.ctx.fillStyle = surfaceColor;
-                    this.ctx.fillText(`Поверхность: ${surfaceStatus}`, infoX + 10, infoY + 40);
-                } else {
-                    this.ctx.fillStyle = '#aaa';
-                    this.ctx.fillText('Поверхность: Не вызван', infoX + 10, infoY + 40);
-                }
-                
-                // Пещерный босс
-                if (this.caveBoss) {
-                    const caveStatus = this.caveBoss.alive ? 'Жив' : 'Побежден';
-                    const caveColor = this.caveBoss.alive ? '#f44' : '#8f8';
-                    this.ctx.fillStyle = caveColor;
-                    this.ctx.fillText(`Пещера: ${caveStatus}`, infoX + 10, infoY + 60);
-                } else {
-                    this.ctx.fillStyle = '#aaa';
-                    this.ctx.fillText('Пещера: Не вызван', infoX + 10, infoY + 60);
-                }
+                const respawnLevelText = this.player.respawnLevel === WORLD_LEVELS.SURFACE ? "Поверхность" : "Пещера";
+                this.ctx.fillText(`Уровень: ${respawnLevelText}`, infoX + 10, infoY + 40);
             }
             
             drawMobInfo() {
@@ -3889,20 +4092,6 @@
                     this.ctx.fillStyle = skeletonCount > 0 ? '#f44' : '#8f8';
                     this.ctx.fillText(`Скелеты: ${skeletonCount}`, infoX + 10, infoY + 40);
                 }
-            }
-            
-            drawGameOver() {
-                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-                this.ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-                
-                this.ctx.fillStyle = '#f44';
-                this.ctx.font = 'bold 48px Courier New';
-                this.ctx.textAlign = 'center';
-                this.ctx.fillText('ПОРАЖЕНИЕ', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 40);
-                
-                this.ctx.fillStyle = '#fff';
-                this.ctx.font = '24px Courier New';
-                this.ctx.fillText('Обновите страницу для перезапуска', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 40);
             }
             
             gameLoop(timestamp) {
