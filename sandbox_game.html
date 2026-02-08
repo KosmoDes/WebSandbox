@@ -1,0 +1,2483 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Пиксельная Песочница: Пещерный уровень</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Courier New', monospace;
+        }
+        
+        body {
+            background: #111;
+            color: #eee;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+            overflow: hidden;
+        }
+        
+        #gameCanvas {
+            border: 3px solid #444;
+            background: #000;
+            display: block;
+            box-shadow: 0 0 20px rgba(0, 100, 200, 0.5);
+        }
+        
+        .info {
+            margin-top: 20px;
+            text-align: center;
+            max-width: 800px;
+            line-height: 1.5;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #444;
+        }
+        
+        h1 {
+            color: #4af;
+            margin-bottom: 10px;
+            font-size: 28px;
+            text-shadow: 0 0 5px #4af;
+        }
+        
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+            width: 100%;
+        }
+        
+        .control-group {
+            background: rgba(30, 30, 40, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            border: 1px solid #444;
+        }
+        
+        h2 {
+            color: #8cf;
+            margin-bottom: 8px;
+            font-size: 18px;
+        }
+        
+        ul {
+            list-style-type: none;
+            padding-left: 10px;
+        }
+        
+        li {
+            margin-bottom: 5px;
+            color: #ccc;
+        }
+        
+        .key {
+            display: inline-block;
+            background: #333;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid #555;
+            margin: 0 2px;
+            font-weight: bold;
+        }
+        
+        .status {
+            margin-top: 10px;
+            color: #8f8;
+            font-weight: bold;
+        }
+        
+        .warning {
+            color: #f88;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>ПИКСЕЛЬНАЯ ПЕСОЧНИЦА: ПЕЩЕРЫ</h1>
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+    
+    <div class="info">
+        <div class="controls">
+            <div class="control-group">
+                <h2>Управление</h2>
+                <ul>
+                    <li>Движение: <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> или <span class="key">←↑↓→</span></li>
+                    <li>Собрать ресурс: <span class="key">E</span></li>
+                    <li>Открыть крафт: <span class="key">C</span></li>
+                    <li>Плавить руду у печки: <span class="key">F</span></li>
+                    <li>Спуститься/подняться: <span class="key">ПРОБЕЛ</span> у шахты/лестницы</li>
+                    <li>Выбрать слот: <span class="key">1</span>-<span class="key">8</span> или колесо мыши</li>
+                    <li>Построить/атаковать/инструмент: <span class="key">ЛКМ</span></li>
+                    <li>Закрыть меню: <span class="key">ESC</span></li>
+                </ul>
+            </div>
+            <div class="control-group">
+                <h2>Цели</h2>
+                <ul>
+                    <li>1. Соберите дерево и камень</li>
+                    <li>2. Создайте лопату (2x дерево + 1x камень)</li>
+                    <li>3. Создайте шахту (используйте лопату на траве)</li>
+                    <li>4. Спуститесь в пещеру за рудой</li>
+                    <li>5. Создайте кирку (3x камень)</li>
+                    <li>6. Добудьте железную руду и уголь</li>
+                    <li>7. Постройте печку (5x камень)</li>
+                    <li>8. Плавьте железо в слитки (уголь + руда)</li>
+                    <li>9. Создайте железный молот</li>
+                    <li>10. Постройте алтарь и победите босса!</li>
+                </ul>
+            </div>
+        </div>
+        <div class="status" id="status">Добро пожаловать! Собирайте ресурсы и создавайте предметы.</div>
+    </div>
+
+    <script>
+        // ============================
+        // КОНСТАНТЫ И НАСТРОЙКИ
+        // ============================
+        const CANVAS_WIDTH = 800;
+        const CANVAS_HEIGHT = 600;
+        const TILE_SIZE = 32;
+        const WORLD_WIDTH = 50;
+        const WORLD_HEIGHT = 40;
+        const PLAYER_SIZE = 24;
+        const PLAYER_SPEED = 4;
+        const BOSS_SIZE = 64;
+        
+        // Уровни мира
+        const WORLD_LEVELS = {
+            SURFACE: 0,
+            CAVE: 1
+        };
+        
+        // Типы тайлов мира (поверхность)
+        const TILE_TYPES = {
+            GRASS: 0,
+            WATER: 1,
+            STONE: 2,
+            TREE: 3
+        };
+        
+        // Типы тайлов пещеры
+        const CAVE_TILE_TYPES = {
+            CAVE_WALL: 10,
+            CAVE_FLOOR: 11,
+            IRON_ORE: 12,
+            COAL_ORE: 13,
+            CAVE_EXIT: 14  // Лестница на поверхность
+        };
+        
+        // Типы предметов
+        const ITEM_TYPES = {
+            NONE: 0,
+            WOOD: 1,
+            STONE: 2,
+            PLANK: 3,
+            WALL: 4,
+            HAMMER: 5,
+            ALTAR: 6,
+            SHOVEL: 7,
+            PICKAXE: 8,
+            IRON_ORE: 9,
+            COAL: 10,
+            IRON_BAR: 11,
+            FURNACE: 12,
+            MINE_SHAFT: 13,
+            LADDER: 14,
+            IRON_HAMMER: 15
+        };
+        
+        // Названия предметов
+        const ITEM_NAMES = {
+            [ITEM_TYPES.NONE]: "Пусто",
+            [ITEM_TYPES.WOOD]: "Дерево",
+            [ITEM_TYPES.STONE]: "Камень",
+            [ITEM_TYPES.PLANK]: "Доска",
+            [ITEM_TYPES.WALL]: "Стена",
+            [ITEM_TYPES.HAMMER]: "Молот",
+            [ITEM_TYPES.ALTAR]: "Алтарь",
+            [ITEM_TYPES.SHOVEL]: "Лопата",
+            [ITEM_TYPES.PICKAXE]: "Кирка",
+            [ITEM_TYPES.IRON_ORE]: "Железная руда",
+            [ITEM_TYPES.COAL]: "Уголь",
+            [ITEM_TYPES.IRON_BAR]: "Железный слиток",
+            [ITEM_TYPES.FURNACE]: "Печка",
+            [ITEM_TYPES.MINE_SHAFT]: "Шахта",
+            [ITEM_TYPES.LADDER]: "Лестница",
+            [ITEM_TYPES.IRON_HAMMER]: "Железный молот"
+        };
+        
+        // Цвета предметов
+        const ITEM_COLORS = {
+            [ITEM_TYPES.NONE]: "#333",
+            [ITEM_TYPES.WOOD]: "#8B4513",
+            [ITEM_TYPES.STONE]: "#808080",
+            [ITEM_TYPES.PLANK]: "#DEB887",
+            [ITEM_TYPES.WALL]: "#696969",
+            [ITEM_TYPES.HAMMER]: "#D2691E",
+            [ITEM_TYPES.ALTAR]: "#800080",
+            [ITEM_TYPES.SHOVEL]: "#A0522D",
+            [ITEM_TYPES.PICKAXE]: "#696969",
+            [ITEM_TYPES.IRON_ORE]: "#B22222",
+            [ITEM_TYPES.COAL]: "#2F4F4F",
+            [ITEM_TYPES.IRON_BAR]: "#A9A9A9",
+            [ITEM_TYPES.FURNACE]: "#8B0000",
+            [ITEM_TYPES.MINE_SHAFT]: "#654321",
+            [ITEM_TYPES.LADDER]: "#D2B48C",
+            [ITEM_TYPES.IRON_HAMMER]: "#C0C0C0"
+        };
+        
+        // Рецепты крафта
+        const RECIPES = [
+            {
+                id: 0,
+                name: "Доска",
+                result: ITEM_TYPES.PLANK,
+                ingredients: [{type: ITEM_TYPES.WOOD, count: 2}]
+            },
+            {
+                id: 1,
+                name: "Молот",
+                result: ITEM_TYPES.HAMMER,
+                ingredients: [
+                    {type: ITEM_TYPES.STONE, count: 1},
+                    {type: ITEM_TYPES.PLANK, count: 1}
+                ]
+            },
+            {
+                id: 2,
+                name: "Стена",
+                result: ITEM_TYPES.WALL,
+                ingredients: [{type: ITEM_TYPES.STONE, count: 3}]
+            },
+            {
+                id: 3,
+                name: "Алтарь",
+                result: ITEM_TYPES.ALTAR,
+                ingredients: [
+                    {type: ITEM_TYPES.STONE, count: 5},
+                    {type: ITEM_TYPES.WOOD, count: 3}
+                ]
+            },
+            {
+                id: 4,
+                name: "Лопата",
+                result: ITEM_TYPES.SHOVEL,
+                ingredients: [
+                    {type: ITEM_TYPES.WOOD, count: 2},
+                    {type: ITEM_TYPES.STONE, count: 1}
+                ]
+            },
+            {
+                id: 5,
+                name: "Кирка",
+                result: ITEM_TYPES.PICKAXE,
+                ingredients: [{type: ITEM_TYPES.STONE, count: 3}]
+            },
+            {
+                id: 6,
+                name: "Печка",
+                result: ITEM_TYPES.FURNACE,
+                ingredients: [{type: ITEM_TYPES.STONE, count: 5}]
+            },
+            {
+                id: 7,
+                name: "Лестница",
+                result: ITEM_TYPES.LADDER,
+                ingredients: [
+                    {type: ITEM_TYPES.WOOD, count: 3},
+                    {type: ITEM_TYPES.STONE, count: 1}
+                ]
+            },
+            {
+                id: 8,
+                name: "Железный молот",
+                result: ITEM_TYPES.IRON_HAMMER,
+                ingredients: [
+                    {type: ITEM_TYPES.IRON_BAR, count: 2},
+                    {type: ITEM_TYPES.PLANK, count: 1}
+                ]
+            }
+        ];
+        
+        // ============================
+        // КЛАСС ИГРОКА
+        // ============================
+        class Player {
+            constructor() {
+                this.x = WORLD_WIDTH * TILE_SIZE / 2;
+                this.y = WORLD_HEIGHT * TILE_SIZE / 2;
+                this.size = PLAYER_SIZE;
+                this.speed = PLAYER_SPEED;
+                this.health = 100;
+                this.maxHealth = 100;
+                this.selectedSlot = 0;
+                this.inventory = new Inventory(10);
+                this.lastAttackTime = 0;
+                this.attackCooldown = 500; // мс
+                this.currentLevel = WORLD_LEVELS.SURFACE;
+                this.lastSmeltTime = 0;
+                this.smeltCooldown = 1000; // мс
+            }
+            
+            update(keys, world, deltaTime) {
+                let dx = 0, dy = 0;
+                
+                // Управление игроком
+                if (keys['ArrowUp'] || keys['KeyW']) dy -= this.speed;
+                if (keys['ArrowDown'] || keys['KeyS']) dy += this.speed;
+                if (keys['ArrowLeft'] || keys['KeyA']) dx -= this.speed;
+                if (keys['ArrowRight'] || keys['KeyD']) dx += this.speed;
+                
+                // Нормализация диагонального движения
+                if (dx !== 0 && dy !== 0) {
+                    dx *= 0.7071; // 1/√2
+                    dy *= 0.7071;
+                }
+                
+                // Проверка коллизий по X
+                const newX = this.x + dx;
+                if (!this.checkCollision(newX, this.y, world)) {
+                    this.x = newX;
+                }
+                
+                // Проверка коллизий по Y
+                const newY = this.y + dy;
+                if (!this.checkCollision(this.x, newY, world)) {
+                    this.y = newY;
+                }
+                
+                // Ограничение в пределах мира
+                this.x = Math.max(0, Math.min(WORLD_WIDTH * TILE_SIZE - this.size, this.x));
+                this.y = Math.max(0, Math.min(WORLD_HEIGHT * TILE_SIZE - this.size, this.y));
+                
+                // Обновление времени перезарядки атаки
+                if (this.lastAttackTime > 0) {
+                    this.lastAttackTime -= deltaTime;
+                }
+                
+                // Обновление времени перезарядки плавки
+                if (this.lastSmeltTime > 0) {
+                    this.lastSmeltTime -= deltaTime;
+                }
+            }
+            
+            checkCollision(x, y, world) {
+                // Определяем уровень мира для проверки
+                const level = this.currentLevel;
+                
+                // Проверяем коллизии с препятствиями мира
+                const left = Math.floor(x / TILE_SIZE);
+                const right = Math.floor((x + this.size - 1) / TILE_SIZE);
+                const top = Math.floor(y / TILE_SIZE);
+                const bottom = Math.floor((y + this.size - 1) / TILE_SIZE);
+                
+                for (let ty = top; ty <= bottom; ty++) {
+                    for (let tx = left; tx <= right; tx++) {
+                        if (tx >= 0 && tx < WORLD_WIDTH && ty >= 0 && ty < WORLD_HEIGHT) {
+                            if (level === WORLD_LEVELS.SURFACE) {
+                                // Проверка коллизий на поверхности
+                                const tileType = world.surfaceTiles[ty][tx];
+                                // Вода - препятствие
+                                if (tileType === TILE_TYPES.WATER) {
+                                    return true;
+                                }
+                                
+                                // Проверяем построенные тайлы
+                                const placedKey = `${tx},${ty}`;
+                                if (world.surfacePlacedTiles.has(placedKey)) {
+                                    const placedType = world.surfacePlacedTiles.get(placedKey);
+                                    // Шахта не должна быть препятствием - игрок должен стоять на ней для спуска
+                                    if (placedType !== ITEM_TYPES.MINE_SHAFT) {
+                                        return true;
+                                    }
+                                }
+                            } else if (level === WORLD_LEVELS.CAVE) {
+                                // Проверка коллизий в пещере
+                                const tileType = world.caveTiles[ty][tx];
+                                // Стены пещеры и руды - препятствия
+                                if (tileType === CAVE_TILE_TYPES.CAVE_WALL || 
+                                    tileType === CAVE_TILE_TYPES.IRON_ORE || 
+                                    tileType === CAVE_TILE_TYPES.COAL_ORE) {
+                                    return true;
+                                }
+                                
+                                // Проверяем построенные тайлы в пещере
+                                const placedKey = `${tx},${ty}`;
+                                if (world.cavePlacedTiles.has(placedKey)) {
+                                    const placedType = world.cavePlacedTiles.get(placedKey);
+                                    // Лестница не должна быть препятствием
+                                    if (placedType !== ITEM_TYPES.LADDER) {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                return false;
+            }
+            
+            canSmelt() {
+                return this.lastSmeltTime <= 0;
+            }
+            
+            smelt() {
+                this.lastSmeltTime = this.smeltCooldown;
+            }
+            
+            takeDamage(amount) {
+                this.health -= amount;
+                if (this.health < 0) this.health = 0;
+                return this.health > 0;
+            }
+            
+            heal(amount) {
+                this.health += amount;
+                if (this.health > this.maxHealth) this.health = this.maxHealth;
+            }
+            
+            canAttack() {
+                return this.lastAttackTime <= 0;
+            }
+            
+            attack() {
+                this.lastAttackTime = this.attackCooldown;
+            }
+            
+            draw(ctx, camera) {
+                // Цвет игрока зависит от уровня
+                const playerColor = this.currentLevel === WORLD_LEVELS.SURFACE ? '#2ecc71' : '#3498db';
+                
+                // Рисуем игрока
+                ctx.fillStyle = playerColor;
+                ctx.fillRect(
+                    this.x - camera.x, 
+                    this.y - camera.y, 
+                    this.size, 
+                    this.size
+                );
+                
+                // Контур игрока
+                ctx.strokeStyle = this.currentLevel === WORLD_LEVELS.SURFACE ? '#27ae60' : '#2980b9';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(
+                    this.x - camera.x, 
+                    this.y - camera.y, 
+                    this.size, 
+                    this.size
+                );
+                
+                // Глаза игрока
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(
+                    this.x - camera.x + 6, 
+                    this.y - camera.y + 6, 
+                    4, 
+                    4
+                );
+                ctx.fillRect(
+                    this.x - camera.x + this.size - 10, 
+                    this.y - camera.y + 6, 
+                    4, 
+                    4
+                );
+            }
+            
+            drawHealthBar(ctx) {
+                const barWidth = 100;
+                const barHeight = 12;
+                const x = 20;
+                const y = 20;
+                
+                // Фон полоски здоровья
+                ctx.fillStyle = '#333';
+                ctx.fillRect(x, y, barWidth, barHeight);
+                
+                // Здоровье
+                const healthWidth = (this.health / this.maxHealth) * barWidth;
+                ctx.fillStyle = this.health > 50 ? '#2ecc71' : this.health > 20 ? '#f39c12' : '#e74c3c';
+                ctx.fillRect(x, y, healthWidth, barHeight);
+                
+                // Контур
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(x, y, barWidth, barHeight);
+                
+                // Текст здоровья
+                ctx.fillStyle = '#fff';
+                ctx.font = '12px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Здоровье: ${Math.ceil(this.health)}`, x + barWidth/2, y + barHeight/2 + 4);
+                ctx.textAlign = 'left';
+            }
+            
+            drawLevelIndicator(ctx) {
+                const levelText = this.currentLevel === WORLD_LEVELS.SURFACE ? "Поверхность" : "Пещера";
+                const levelColor = this.currentLevel === WORLD_LEVELS.SURFACE ? '#2ecc71' : '#3498db';
+                
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(20, 40, 120, 25);
+                
+                ctx.fillStyle = levelColor;
+                ctx.font = 'bold 14px Courier New';
+                ctx.textAlign = 'left';
+                ctx.fillText(`Уровень: ${levelText}`, 25, 58);
+            }
+            
+            isPositionInDarkness(x, y) {
+                // Проверяем, находится ли позиция в темноте (вне радиуса видимости игрока)
+                if (this.currentLevel !== WORLD_LEVELS.CAVE) return false;
+                
+                const playerCenterX = this.x + this.size / 2;
+                const playerCenterY = this.y + this.size / 2;
+                const distance = Math.sqrt(
+                    Math.pow(x - playerCenterX, 2) + 
+                    Math.pow(y - playerCenterY, 2)
+                );
+                
+                // Радиус видимости в пещере - 5 тайлов (160 пикселей)
+                return distance > TILE_SIZE * 5;
+            }
+        }
+        
+        // ============================
+        // КЛАСС ИНВЕНТАРЯ
+        // ============================
+        class Inventory {
+            constructor(size) {
+                this.slots = new Array(size).fill().map(() => ({
+                    type: ITEM_TYPES.NONE,
+                    count: 0
+                }));
+            }
+            
+            addItem(type, count = 1) {
+                // Пытаемся добавить в существующий слот
+                for (let slot of this.slots) {
+                    if (slot.type === type && slot.count < 99) {
+                        slot.count += count;
+                        return true;
+                    }
+                }
+                
+                // Ищем пустой слот
+                for (let slot of this.slots) {
+                    if (slot.type === ITEM_TYPES.NONE) {
+                        slot.type = type;
+                        slot.count = count;
+                        return true;
+                    }
+                }
+                
+                return false; // Инвентарь полон
+            }
+            
+            removeItem(type, count = 1) {
+                for (let i = this.slots.length - 1; i >= 0; i--) {
+                    const slot = this.slots[i];
+                    if (slot.type === type) {
+                        if (slot.count > count) {
+                            slot.count -= count;
+                            return true;
+                        } else if (slot.count === count) {
+                            slot.type = ITEM_TYPES.NONE;
+                            slot.count = 0;
+                            return true;
+                        }
+                    }
+                }
+                return false; // Недостаточно предметов
+            }
+            
+            hasItems(type, count) {
+                let total = 0;
+                for (let slot of this.slots) {
+                    if (slot.type === type) {
+                        total += slot.count;
+                    }
+                }
+                return total >= count;
+            }
+            
+            getItemCount(type) {
+                let total = 0;
+                for (let slot of this.slots) {
+                    if (slot.type === type) {
+                        total += slot.count;
+                    }
+                }
+                return total;
+            }
+            
+            getSelectedItem() {
+                return this.slots[game.player.selectedSlot];
+            }
+            
+            draw(ctx) {
+                const slotSize = 42;
+                const margin = 4;
+                const startX = (CANVAS_WIDTH - (this.slots.length * (slotSize + margin))) / 2;
+                const y = CANVAS_HEIGHT - slotSize - 20;
+                
+                // Фон инвентаря
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(startX - 10, y - 10, 
+                            this.slots.length * (slotSize + margin) + 20, 
+                            slotSize + 20);
+                
+                // Слоты инвентаря
+                for (let i = 0; i < this.slots.length; i++) {
+                    const slot = this.slots[i];
+                    const x = startX + i * (slotSize + margin);
+                    
+                    // Фон слота
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(x, y, slotSize, slotSize);
+                    
+                    // Контур слота
+                    ctx.strokeStyle = i === game.player.selectedSlot ? '#4af' : '#666';
+                    ctx.lineWidth = i === game.player.selectedSlot ? 3 : 1;
+                    ctx.strokeRect(x, y, slotSize, slotSize);
+                    
+                    // Если слот не пустой
+                    if (slot.type !== ITEM_TYPES.NONE) {
+                        // Предмет
+                        ctx.fillStyle = ITEM_COLORS[slot.type];
+                        ctx.fillRect(x + 6, y + 6, slotSize - 12, slotSize - 12);
+                        
+                        // Количество
+                        ctx.fillStyle = '#fff';
+                        ctx.font = 'bold 12px Courier New';
+                        ctx.textAlign = 'right';
+                        ctx.fillText(slot.count, x + slotSize - 5, y + slotSize - 5);
+                        
+                        // Название предмета (при наведении)
+                        if (game.mouse.x >= x && game.mouse.x <= x + slotSize && 
+                            game.mouse.y >= y && game.mouse.y <= y + slotSize) {
+                            ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                            ctx.fillRect(x, y - 25, 100, 20);
+                            ctx.fillStyle = '#fff';
+                            ctx.font = '12px Courier New';
+                            ctx.textAlign = 'left';
+                            ctx.fillText(ITEM_NAMES[slot.type], x + 5, y - 10);
+                        }
+                    }
+                    
+                    // Номер слота
+                    ctx.fillStyle = '#aaa';
+                    ctx.font = '10px Courier New';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(i + 1, x + 4, y + 14);
+                }
+            }
+        }
+        
+        // ============================
+        // КЛАСС МИРА
+        // ============================
+        class World {
+            constructor() {
+                // Поверхность
+                this.surfaceTiles = [];
+                this.surfacePlacedTiles = new Map(); // Построенные тайлы: ключ -> тип
+                // Пещера
+                this.caveTiles = [];
+                this.cavePlacedTiles = new Map();
+                
+                this.generateSurface();
+                this.generateCave();
+            }
+            
+            generateSurface() {
+                // Инициализация пустой поверхности
+                for (let y = 0; y < WORLD_HEIGHT; y++) {
+                    this.surfaceTiles[y] = [];
+                    for (let x = 0; x < WORLD_WIDTH; x++) {
+                        this.surfaceTiles[y][x] = TILE_TYPES.GRASS;
+                    }
+                }
+                
+                // Создаем водоемы
+                for (let i = 0; i < 6; i++) {
+                    const waterX = Math.floor(Math.random() * (WORLD_WIDTH - 10)) + 5;
+                    const waterY = Math.floor(Math.random() * (WORLD_HEIGHT - 8)) + 4;
+                    const radius = Math.floor(Math.random() * 5) + 3;
+                    
+                    for (let y = waterY - radius; y < waterY + radius; y++) {
+                        for (let x = waterX - radius; x < waterX + radius; x++) {
+                            if (x >= 0 && x < WORLD_WIDTH && y >= 0 && y < WORLD_HEIGHT) {
+                                const dist = Math.sqrt((x - waterX) ** 2 + (y - waterY) ** 2);
+                                if (dist < radius) {
+                                    this.surfaceTiles[y][x] = TILE_TYPES.WATER;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Размещаем камни
+                for (let i = 0; i < 30; i++) {
+                    const x = Math.floor(Math.random() * WORLD_WIDTH);
+                    const y = Math.floor(Math.random() * WORLD_HEIGHT);
+                    if (this.surfaceTiles[y][x] === TILE_TYPES.GRASS) {
+                        this.surfaceTiles[y][x] = TILE_TYPES.STONE;
+                    }
+                }
+                
+                // Размещаем деревья
+                for (let i = 0; i < 25; i++) {
+                    const x = Math.floor(Math.random() * WORLD_WIDTH);
+                    const y = Math.floor(Math.random() * WORLD_HEIGHT);
+                    if (this.surfaceTiles[y][x] === TILE_TYPES.GRASS) {
+                        this.surfaceTiles[y][x] = TILE_TYPES.TREE;
+                    }
+                }
+                
+                // Гарантируем стартовую позицию без препятствий
+                const startX = Math.floor(WORLD_WIDTH / 2);
+                const startY = Math.floor(WORLD_HEIGHT / 2);
+                for (let y = startY - 3; y <= startY + 3; y++) {
+                    for (let x = startX - 3; x <= startX + 3; x++) {
+                        if (x >= 0 && x < WORLD_WIDTH && y >= 0 && y < WORLD_HEIGHT) {
+                            this.surfaceTiles[y][x] = TILE_TYPES.GRASS;
+                        }
+                    }
+                }
+            }
+            
+            generateCave() {
+                // Инициализация пещеры (все стены)
+                for (let y = 0; y < WORLD_HEIGHT; y++) {
+                    this.caveTiles[y] = [];
+                    for (let x = 0; x < WORLD_WIDTH; x++) {
+                        this.caveTiles[y][x] = CAVE_TILE_TYPES.CAVE_WALL;
+                    }
+                }
+                
+                // Создаем центральную комнату (5x5 блоков)
+                const centerX = Math.floor(WORLD_WIDTH / 2);
+                const centerY = Math.floor(WORLD_HEIGHT / 2);
+                const roomSize = 5;
+                
+                for (let y = centerY - roomSize; y <= centerY + roomSize; y++) {
+                    for (let x = centerX - roomSize; x <= centerX + roomSize; x++) {
+                        if (x >= 0 && x < WORLD_WIDTH && y >= 0 && y < WORLD_HEIGHT) {
+                            this.caveTiles[y][x] = CAVE_TILE_TYPES.CAVE_FLOOR;
+                        }
+                    }
+                }
+                
+                // Лестница на поверхность в центре комнаты
+                this.caveTiles[centerY][centerX] = CAVE_TILE_TYPES.CAVE_EXIT;
+                
+                // Создаем туннели от комнаты
+                this.createCaveTunnels(centerX, centerY, roomSize);
+                
+                // Размещаем железную руду в пещере
+                for (let i = 0; i < 15; i++) {
+                    let x, y;
+                    do {
+                        x = Math.floor(Math.random() * WORLD_WIDTH);
+                        y = Math.floor(Math.random() * WORLD_HEIGHT);
+                    } while (this.caveTiles[y][x] !== CAVE_TILE_TYPES.CAVE_WALL);
+                    
+                    this.caveTiles[y][x] = CAVE_TILE_TYPES.IRON_ORE;
+                }
+                
+                // Размещаем уголь в пещере
+                for (let i = 0; i < 20; i++) {
+                    let x, y;
+                    do {
+                        x = Math.floor(Math.random() * WORLD_WIDTH);
+                        y = Math.floor(Math.random() * WORLD_HEIGHT);
+                    } while (this.caveTiles[y][x] !== CAVE_TILE_TYPES.CAVE_WALL);
+                    
+                    this.caveTiles[y][x] = CAVE_TILE_TYPES.COAL_ORE;
+                }
+                
+                // Добавляем немного случайных полов в пещере для разнообразия
+                for (let i = 0; i < 50; i++) {
+                    const x = Math.floor(Math.random() * WORLD_WIDTH);
+                    const y = Math.floor(Math.random() * WORLD_HEIGHT);
+                    if (this.caveTiles[y][x] === CAVE_TILE_TYPES.CAVE_WALL) {
+                        // Проверяем соседей
+                        let floorNeighbors = 0;
+                        for (let dy = -1; dy <= 1; dy++) {
+                            for (let dx = -1; dx <= 1; dx++) {
+                                const nx = x + dx;
+                                const ny = y + dy;
+                                if (nx >= 0 && nx < WORLD_WIDTH && ny >= 0 && ny < WORLD_HEIGHT) {
+                                    if (this.caveTiles[ny][nx] === CAVE_TILE_TYPES.CAVE_FLOOR) {
+                                        floorNeighbors++;
+                                    }
+                                }
+                            }
+                        }
+                        if (floorNeighbors >= 3) {
+                            this.caveTiles[y][x] = CAVE_TILE_TYPES.CAVE_FLOOR;
+                        }
+                    }
+                }
+            }
+            
+            createCaveTunnels(startX, startY, radius) {
+                // Создаем 4 туннеля из центральной комнаты
+                const directions = [
+                    {dx: 1, dy: 0, length: 10},   // Вправо
+                    {dx: -1, dy: 0, length: 10},  // Влево
+                    {dx: 0, dy: 1, length: 8},    // Вниз
+                    {dx: 0, dy: -1, length: 8}    // Вверх
+                ];
+                
+                for (let dir of directions) {
+                    let x = startX + (dir.dx > 0 ? radius : dir.dx < 0 ? -radius : 0);
+                    let y = startY + (dir.dy > 0 ? radius : dir.dy < 0 ? -radius : 0);
+                    
+                    for (let i = 0; i < dir.length; i++) {
+                        for (let w = -1; w <= 1; w++) {
+                            const tx = x + (dir.dx === 0 ? w : 0);
+                            const ty = y + (dir.dy === 0 ? w : 0);
+                            
+                            if (tx >= 0 && tx < WORLD_WIDTH && ty >= 0 && ty < WORLD_HEIGHT) {
+                                if (this.caveTiles[ty][tx] === CAVE_TILE_TYPES.CAVE_WALL) {
+                                    this.caveTiles[ty][tx] = CAVE_TILE_TYPES.CAVE_FLOOR;
+                                }
+                            }
+                        }
+                        
+                        x += dir.dx;
+                        y += dir.dy;
+                        
+                        // Останавливаемся, если вышли за границы мира
+                        if (x < 0 || x >= WORLD_WIDTH || y < 0 || y >= WORLD_HEIGHT) {
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            getTileAt(x, y, level) {
+                const tileX = Math.floor(x / TILE_SIZE);
+                const tileY = Math.floor(y / TILE_SIZE);
+                
+                if (tileX >= 0 && tileX < WORLD_WIDTH && tileY >= 0 && tileY < WORLD_HEIGHT) {
+                    if (level === WORLD_LEVELS.SURFACE) {
+                        return this.surfaceTiles[tileY][tileX];
+                    } else if (level === WORLD_LEVELS.CAVE) {
+                        return this.caveTiles[tileY][tileX];
+                    }
+                }
+                return level === WORLD_LEVELS.SURFACE ? TILE_TYPES.GRASS : CAVE_TILE_TYPES.CAVE_WALL;
+            }
+            
+            isResourceAt(x, y, level, toolType = null) {
+                const tileType = this.getTileAt(x, y, level);
+                
+                if (level === WORLD_LEVELS.SURFACE) {
+                    // На поверхности нужна лопата для травы (создание шахты)
+                    if (toolType === ITEM_TYPES.SHOVEL && tileType === TILE_TYPES.GRASS) {
+                        return true;
+                    }
+                    // Дерево и камень можно собирать без инструмента
+                    return tileType === TILE_TYPES.STONE || tileType === TILE_TYPES.TREE;
+                } else if (level === WORLD_LEVELS.CAVE) {
+                    // В пещере нужна кирка для добычи руды
+                    if (toolType === ITEM_TYPES.PICKAXE) {
+                        return tileType === CAVE_TILE_TYPES.IRON_ORE || 
+                               tileType === CAVE_TILE_TYPES.COAL_ORE ||
+                               tileType === CAVE_TILE_TYPES.CAVE_WALL;
+                    }
+                    return false;
+                }
+                return false;
+            }
+            
+            collectResource(x, y, level, toolType = null) {
+                const tileX = Math.floor(x / TILE_SIZE);
+                const tileY = Math.floor(y / TILE_SIZE);
+                
+                if (tileX >= 0 && tileX < WORLD_WIDTH && tileY >= 0 && tileY < WORLD_HEIGHT) {
+                    if (level === WORLD_LEVELS.SURFACE) {
+                        const tileType = this.surfaceTiles[tileY][tileX];
+                        
+                        if (toolType === ITEM_TYPES.SHOVEL && tileType === TILE_TYPES.GRASS) {
+                            // Создаем шахту вместо сбора ресурса
+                            return null; // Возвращаем null, чтобы показать, что это особое действие
+                        } else if (tileType === TILE_TYPES.STONE) {
+                            this.surfaceTiles[tileY][tileX] = TILE_TYPES.GRASS;
+                            return ITEM_TYPES.STONE;
+                        } else if (tileType === TILE_TYPES.TREE) {
+                            this.surfaceTiles[tileY][tileX] = TILE_TYPES.GRASS;
+                            return ITEM_TYPES.WOOD;
+                        }
+                    } else if (level === WORLD_LEVELS.CAVE) {
+                        const tileType = this.caveTiles[tileY][tileX];
+                        
+                        if (toolType === ITEM_TYPES.PICKAXE) {
+                            if (tileType === CAVE_TILE_TYPES.IRON_ORE) {
+                                this.caveTiles[tileY][tileX] = CAVE_TILE_TYPES.CAVE_FLOOR;
+                                return ITEM_TYPES.IRON_ORE;
+                            } else if (tileType === CAVE_TILE_TYPES.COAL_ORE) {
+                                this.caveTiles[tileY][tileX] = CAVE_TILE_TYPES.CAVE_FLOOR;
+                                return ITEM_TYPES.COAL;
+                            } else if (tileType === CAVE_TILE_TYPES.CAVE_WALL) {
+                                this.caveTiles[tileY][tileX] = CAVE_TILE_TYPES.CAVE_FLOOR;
+                                return ITEM_TYPES.STONE;
+                            }
+                        }
+                    }
+                }
+                return ITEM_TYPES.NONE;
+            }
+            
+            placeTile(x, y, itemType, level) {
+                const tileX = Math.floor(x / TILE_SIZE);
+                const tileY = Math.floor(y / TILE_SIZE);
+                const key = `${tileX},${tileY}`;
+                
+                if (tileX >= 0 && tileX < WORLD_WIDTH && tileY >= 0 && tileY < WORLD_HEIGHT) {
+                    if (level === WORLD_LEVELS.SURFACE) {
+                        // Проверяем, что место свободно (не вода и не другое здание)
+                        if (this.surfaceTiles[tileY][tileX] !== TILE_TYPES.WATER && !this.surfacePlacedTiles.has(key)) {
+                            this.surfacePlacedTiles.set(key, itemType);
+                            return true;
+                        }
+                    } else if (level === WORLD_LEVELS.CAVE) {
+                        // В пещере можно строить только на полу
+                        if (this.caveTiles[tileY][tileX] === CAVE_TILE_TYPES.CAVE_FLOOR && !this.cavePlacedTiles.has(key)) {
+                            this.cavePlacedTiles.set(key, itemType);
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+            
+            createMineShaft(x, y) {
+                const tileX = Math.floor(x / TILE_SIZE);
+                const tileY = Math.floor(y / TILE_SIZE);
+                const key = `${tileX},${tileY}`;
+                
+                if (tileX >= 0 && tileX < WORLD_WIDTH && tileY >= 0 && tileY < WORLD_HEIGHT) {
+                    if (this.surfaceTiles[tileY][tileX] === TILE_TYPES.GRASS && !this.surfacePlacedTiles.has(key)) {
+                        this.surfacePlacedTiles.set(key, ITEM_TYPES.MINE_SHAFT);
+                        return true;
+                    }
+                }
+                return false;
+            }
+            
+            isNearMineShaftOrLadder(x, y, level) {
+                const tileX = Math.floor(x / TILE_SIZE);
+                const tileY = Math.floor(y / TILE_SIZE);
+                
+                // Проверяем все соседние тайлы
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        const nx = tileX + dx;
+                        const ny = tileY + dy;
+                        const key = `${nx},${ny}`;
+                        
+                        if (level === WORLD_LEVELS.SURFACE) {
+                            if (this.surfacePlacedTiles.has(key) && this.surfacePlacedTiles.get(key) === ITEM_TYPES.MINE_SHAFT) {
+                                return true;
+                            }
+                        } else if (level === WORLD_LEVELS.CAVE) {
+                            if (this.cavePlacedTiles.has(key) && this.cavePlacedTiles.get(key) === ITEM_TYPES.LADDER) {
+                                return true;
+                            }
+                            // Также проверяем лестницу на поверхность (фиксированную)
+                            if (this.caveTiles[ny] && this.caveTiles[ny][nx] === CAVE_TILE_TYPES.CAVE_EXIT) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                return false;
+            }
+            
+            isNearFurnace(x, y, level) {
+                const tileX = Math.floor(x / TILE_SIZE);
+                const tileY = Math.floor(y / TILE_SIZE);
+                
+                // Проверяем все соседние тайлы
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        const nx = tileX + dx;
+                        const ny = tileY + dy;
+                        const key = `${nx},${ny}`;
+                        
+                        if (level === WORLD_LEVELS.SURFACE) {
+                            if (this.surfacePlacedTiles.has(key) && this.surfacePlacedTiles.get(key) === ITEM_TYPES.FURNACE) {
+                                return true;
+                            }
+                        } else if (level === WORLD_LEVELS.CAVE) {
+                            if (this.cavePlacedTiles.has(key) && this.cavePlacedTiles.get(key) === ITEM_TYPES.FURNACE) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                return false;
+            }
+            
+            draw(ctx, camera, level) {
+                // Определяем видимую область
+                const startX = Math.max(0, Math.floor(camera.x / TILE_SIZE));
+                const endX = Math.min(WORLD_WIDTH, Math.ceil((camera.x + CANVAS_WIDTH) / TILE_SIZE));
+                const startY = Math.max(0, Math.floor(camera.y / TILE_SIZE));
+                const endY = Math.min(WORLD_HEIGHT, Math.ceil((camera.y + CANVAS_HEIGHT) / TILE_SIZE));
+                
+                if (level === WORLD_LEVELS.SURFACE) {
+                    // Рисуем тайлы поверхности
+                    for (let y = startY; y < endY; y++) {
+                        for (let x = startX; x < endX; x++) {
+                            const tileType = this.surfaceTiles[y][x];
+                            const drawX = x * TILE_SIZE - camera.x;
+                            const drawY = y * TILE_SIZE - camera.y;
+                            
+                            // Рисуем фон тайла
+                            switch (tileType) {
+                                case TILE_TYPES.GRASS:
+                                    ctx.fillStyle = '#2d5a27';
+                                    break;
+                                case TILE_TYPES.WATER:
+                                    ctx.fillStyle = '#1a3a6e';
+                                    break;
+                                case TILE_TYPES.STONE:
+                                    ctx.fillStyle = '#555';
+                                    break;
+                                case TILE_TYPES.TREE:
+                                    ctx.fillStyle = '#2d5a27';
+                                    break;
+                            }
+                            
+                            ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+                            
+                            // Детали тайлов
+                            switch (tileType) {
+                                case TILE_TYPES.GRASS:
+                                    // Трава
+                                    ctx.fillStyle = '#3a6a32';
+                                    for (let i = 0; i < 5; i++) {
+                                        const px = drawX + Math.random() * TILE_SIZE;
+                                        const py = drawY + Math.random() * TILE_SIZE;
+                                        ctx.fillRect(px, py, 2, 2);
+                                    }
+                                    break;
+                                    
+                                case TILE_TYPES.WATER:
+                                    // Волны на воду
+                                    ctx.fillStyle = '#2a4a8e';
+                                    for (let i = 0; i < 3; i++) {
+                                        const px = drawX + Math.random() * TILE_SIZE;
+                                        const py = drawY + Math.random() * TILE_SIZE;
+                                        ctx.fillRect(px, py, 4, 1);
+                                    }
+                                    break;
+                                    
+                                case TILE_TYPES.STONE:
+                                    // Камень
+                                    ctx.fillStyle = '#777';
+                                    ctx.fillRect(drawX + 4, drawY + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+                                    ctx.fillStyle = '#444';
+                                    ctx.strokeRect(drawX + 4, drawY + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+                                    break;
+                                    
+                                case TILE_TYPES.TREE:
+                                    // Дерево (ствол)
+                                    ctx.fillStyle = '#8B4513';
+                                    ctx.fillRect(drawX + 12, drawY + 16, 8, 16);
+                                    // Крона
+                                    ctx.fillStyle = '#2e7d32';
+                                    ctx.beginPath();
+                                    ctx.arc(drawX + 16, drawY + 12, 10, 0, Math.PI * 2);
+                                    ctx.fill();
+                                    break;
+                            }
+                        }
+                    }
+                    
+                    // Рисуем построенные игроком тайлы на поверхности
+                    for (let [key, itemType] of this.surfacePlacedTiles) {
+                        const [x, y] = key.split(',').map(Number);
+                        const drawX = x * TILE_SIZE - camera.x;
+                        const drawY = y * TILE_SIZE - camera.y;
+                        
+                        this.drawPlacedTile(ctx, drawX, drawY, itemType);
+                    }
+                } else if (level === WORLD_LEVELS.CAVE) {
+                    // Темный фон для пещеры
+                    ctx.fillStyle = '#000';
+                    ctx.fillRect(startX * TILE_SIZE - camera.x, startY * TILE_SIZE - camera.y, 
+                                (endX - startX) * TILE_SIZE, (endY - startY) * TILE_SIZE);
+                    
+                    // Рисуем тайлы пещеры
+                    for (let y = startY; y < endY; y++) {
+                        for (let x = startX; x < endX; x++) {
+                            const tileType = this.caveTiles[y][x];
+                            const drawX = x * TILE_SIZE - camera.x;
+                            const drawY = y * TILE_SIZE - camera.y;
+                            
+                            // Рисуем только если тайл в радиусе видимости от игрока
+                            const worldX = x * TILE_SIZE;
+                            const worldY = y * TILE_SIZE;
+                            if (!game.player.isPositionInDarkness(worldX + TILE_SIZE/2, worldY + TILE_SIZE/2)) {
+                                // Рисуем тайлы пещеры
+                                switch (tileType) {
+                                    case CAVE_TILE_TYPES.CAVE_WALL:
+                                        ctx.fillStyle = '#333';
+                                        ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+                                        
+                                        // Текстура стены
+                                        ctx.fillStyle = '#222';
+                                        for (let i = 0; i < 4; i++) {
+                                            ctx.fillRect(drawX + 2 + i * 7, drawY + 2, 3, TILE_SIZE - 4);
+                                        }
+                                        break;
+                                        
+                                    case CAVE_TILE_TYPES.CAVE_FLOOR:
+                                        ctx.fillStyle = '#222';
+                                        ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+                                        
+                                        // Текстура пола
+                                        ctx.fillStyle = '#2a2a2a';
+                                        for (let i = 0; i < 3; i++) {
+                                            for (let j = 0; j < 3; j++) {
+                                                ctx.fillRect(drawX + 4 + i * 8, drawY + 4 + j * 8, 2, 2);
+                                            }
+                                        }
+                                        break;
+                                        
+                                    case CAVE_TILE_TYPES.IRON_ORE:
+                                        ctx.fillStyle = '#222';
+                                        ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+                                        
+                                        // Железная руда
+                                        ctx.fillStyle = '#B22222';
+                                        ctx.fillRect(drawX + 4, drawY + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+                                        
+                                        // Блеск руды
+                                        ctx.fillStyle = '#FF6347';
+                                        ctx.fillRect(drawX + 8, drawY + 8, 4, 4);
+                                        ctx.fillRect(drawX + 20, drawY + 20, 3, 3);
+                                        break;
+                                        
+                                    case CAVE_TILE_TYPES.COAL_ORE:
+                                        ctx.fillStyle = '#222';
+                                        ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+                                        
+                                        // Уголь
+                                        ctx.fillStyle = '#2F4F4F';
+                                        ctx.fillRect(drawX + 4, drawY + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+                                        
+                                        // Детали угля
+                                        ctx.fillStyle = '#000';
+                                        for (let i = 0; i < 5; i++) {
+                                            ctx.fillRect(drawX + 6 + i * 5, drawY + 12, 3, 8);
+                                        }
+                                        break;
+                                        
+                                    case CAVE_TILE_TYPES.CAVE_EXIT:
+                                        ctx.fillStyle = '#222';
+                                        ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
+                                        
+                                        // Лестница на поверхность
+                                        ctx.fillStyle = '#D2B48C';
+                                        for (let i = 0; i < 3; i++) {
+                                            ctx.fillRect(drawX + 4, drawY + 8 + i * 8, TILE_SIZE - 8, 3);
+                                        }
+                                        ctx.fillRect(drawX + 8, drawY + 4, 3, TILE_SIZE - 8);
+                                        ctx.fillRect(drawX + 20, drawY + 4, 3, TILE_SIZE - 8);
+                                        break;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Рисуем построенные игроком тайлы в пещере (только если в радиусе видимости)
+                    for (let [key, itemType] of this.cavePlacedTiles) {
+                        const [x, y] = key.split(',').map(Number);
+                        const drawX = x * TILE_SIZE - camera.x;
+                        const drawY = y * TILE_SIZE - camera.y;
+                        const worldX = x * TILE_SIZE;
+                        const worldY = y * TILE_SIZE;
+                        
+                        if (!game.player.isPositionInDarkness(worldX + TILE_SIZE/2, worldY + TILE_SIZE/2)) {
+                            this.drawPlacedTile(ctx, drawX, drawY, itemType);
+                        }
+                    }
+                }
+            }
+            
+            drawPlacedTile(ctx, x, y, itemType) {
+                switch (itemType) {
+                    case ITEM_TYPES.WALL:
+                        // Стена
+                        ctx.fillStyle = '#696969';
+                        ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                        ctx.fillStyle = '#555';
+                        ctx.fillRect(x + 4, y + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+                        
+                        // Текстура стены
+                        ctx.fillStyle = '#444';
+                        for (let i = 0; i < 4; i++) {
+                            ctx.fillRect(x + 6 + i * 6, y + 8, 2, TILE_SIZE - 12);
+                        }
+                        break;
+                        
+                    case ITEM_TYPES.ALTAR:
+                        // Алтарь
+                        ctx.fillStyle = '#800080';
+                        ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                        ctx.fillStyle = '#4B0082';
+                        ctx.fillRect(x + 4, y + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+                        
+                        // Символ на алтаре
+                        ctx.fillStyle = '#FFD700';
+                        ctx.beginPath();
+                        ctx.arc(x + TILE_SIZE/2, y + TILE_SIZE/2, 8, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        ctx.fillStyle = '#800080';
+                        ctx.beginPath();
+                        ctx.arc(x + TILE_SIZE/2, y + TILE_SIZE/2, 4, 0, Math.PI * 2);
+                        ctx.fill();
+                        break;
+                        
+                    case ITEM_TYPES.MINE_SHAFT:
+                        // Шахта
+                        ctx.fillStyle = '#654321';
+                        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                        
+                        // Вход в шахту
+                        ctx.fillStyle = '#222';
+                        ctx.fillRect(x + 8, y + 8, TILE_SIZE - 16, TILE_SIZE - 16);
+                        
+                        // Лестница в шахте
+                        ctx.fillStyle = '#D2B48C';
+                        for (let i = 0; i < 3; i++) {
+                            ctx.fillRect(x + 6, y + 6 + i * 8, TILE_SIZE - 12, 3);
+                        }
+                        break;
+                        
+                    case ITEM_TYPES.FURNACE:
+                        // Печка
+                        ctx.fillStyle = '#8B0000';
+                        ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+                        ctx.fillStyle = '#A52A2A';
+                        ctx.fillRect(x + 4, y + 4, TILE_SIZE - 8, TILE_SIZE - 8);
+                        
+                        // Отверстие печки
+                        ctx.fillStyle = '#222';
+                        ctx.fillRect(x + 10, y + 10, TILE_SIZE - 20, TILE_SIZE - 20);
+                        
+                        // Огонь (если есть уголь)
+                        if (Math.random() > 0.7) {
+                            ctx.fillStyle = '#FF4500';
+                            ctx.fillRect(x + 12, y + 20, TILE_SIZE - 24, 4);
+                        }
+                        break;
+                        
+                    case ITEM_TYPES.LADDER:
+                        // Лестница
+                        ctx.fillStyle = '#222';
+                        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                        
+                        ctx.fillStyle = '#D2B48C';
+                        for (let i = 0; i < 4; i++) {
+                            ctx.fillRect(x + 8, y + 4 + i * 7, TILE_SIZE - 16, 3);
+                        }
+                        ctx.fillRect(x + 6, y + 4, 3, TILE_SIZE - 8);
+                        ctx.fillRect(x + 22, y + 4, 3, TILE_SIZE - 8);
+                        break;
+                }
+            }
+            
+            drawCaveDarkness(ctx, camera, player) {
+                if (player.currentLevel !== WORLD_LEVELS.CAVE) return;
+                
+                // Создаем радиальный градиент для темноты
+                const centerX = player.x - camera.x + player.size / 2;
+                const centerY = player.y - camera.y + player.size / 2;
+                const radius = TILE_SIZE * 5; // Радиус видимости
+                
+                const gradient = ctx.createRadialGradient(
+                    centerX, centerY, radius * 0.3,
+                    centerX, centerY, radius
+                );
+                gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+                gradient.addColorStop(0.7, 'rgba(0, 0, 0, 0.6)');
+                gradient.addColorStop(1, 'rgba(0, 0, 0, 0.95)');
+                
+                // Рисуем градиент на весь экран
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                
+                // Добавляем дополнительный слой темноты по краям
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+                
+                // Верхний прямоугольник
+                ctx.fillRect(0, 0, CANVAS_WIDTH, Math.max(0, centerY - radius));
+                // Нижний прямоугольник
+                ctx.fillRect(0, Math.min(CANVAS_HEIGHT, centerY + radius), CANVAS_WIDTH, CANVAS_HEIGHT);
+                // Левый прямоугольник
+                ctx.fillRect(0, 0, Math.max(0, centerX - radius), CANVAS_HEIGHT);
+                // Правый прямоугольник
+                ctx.fillRect(Math.min(CANVAS_WIDTH, centerX + radius), 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            }
+        }
+        
+        // ============================
+        // КЛАСС БОССА
+        // ============================
+        class Boss {
+            constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = BOSS_SIZE;
+                this.health = 150;
+                this.maxHealth = 150;
+                this.speed = 1.5;
+                this.damage = 15;
+                this.lastAttackTime = 0;
+                this.attackCooldown = 1000; // мс
+                this.alive = true;
+            }
+            
+            update(player, deltaTime) {
+                if (!this.alive) return;
+                
+                // Движение к игроку
+                const dx = player.x - this.x;
+                const dy = player.y - this.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance > 0) {
+                    this.x += (dx / distance) * this.speed;
+                    this.y += (dy / distance) * this.speed;
+                }
+                
+                // Обновление времени перезарядки атаки
+                if (this.lastAttackTime > 0) {
+                    this.lastAttackTime -= deltaTime;
+                }
+                
+                // Проверка столкновения с игроком
+                if (this.checkCollision(player) && this.lastAttackTime <= 0) {
+                    player.takeDamage(this.damage);
+                    this.lastAttackTime = this.attackCooldown;
+                }
+            }
+            
+            checkCollision(player) {
+                const dx = this.x - player.x;
+                const dy = this.y - player.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < (this.size / 2 + player.size / 2);
+            }
+            
+            takeDamage(amount) {
+                this.health -= amount;
+                if (this.health <= 0) {
+                    this.health = 0;
+                    this.alive = false;
+                }
+            }
+            
+            draw(ctx, camera) {
+                if (!this.alive) return;
+                
+                // Тело босса (большой красный круг)
+                ctx.fillStyle = '#c0392b';
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x,
+                    this.y - camera.y,
+                    this.size / 2,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                // Глаза босса (желтые круги)
+                ctx.fillStyle = '#f1c40f';
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x - 15,
+                    this.y - camera.y - 10,
+                    8,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x + 15,
+                    this.y - camera.y - 10,
+                    8,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                // Зрачки
+                ctx.fillStyle = '#000';
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x - 15,
+                    this.y - camera.y - 10,
+                    3,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x + 15,
+                    this.y - camera.y - 10,
+                    3,
+                    0,
+                    Math.PI * 2
+                );
+                ctx.fill();
+                
+                // Рот
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(
+                    this.x - camera.x,
+                    this.y - camera.y + 10,
+                    15,
+                    0,
+                    Math.PI
+                );
+                ctx.stroke();
+                
+                // Полоска здоровья
+                const barWidth = 100;
+                const barHeight = 8;
+                const barX = this.x - camera.x - barWidth / 2;
+                const barY = this.y - camera.y - this.size / 2 - 15;
+                
+                ctx.fillStyle = '#333';
+                ctx.fillRect(barX, barY, barWidth, barHeight);
+                
+                const healthWidth = (this.health / this.maxHealth) * barWidth;
+                ctx.fillStyle = this.health > 50 ? '#2ecc71' : this.health > 20 ? '#f39c12' : '#e74c3c';
+                ctx.fillRect(barX, barY, healthWidth, barHeight);
+                
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(barX, barY, barWidth, barHeight);
+            }
+        }
+        
+        // ============================
+        // СИСТЕМА КРАФТА
+        // ============================
+        class CraftingSystem {
+            constructor() {
+                this.recipes = RECIPES;
+                this.isOpen = false;
+                this.scrollOffset = 0;
+                this.maxScrollOffset = 0;
+            }
+            
+            canCraft(recipe, inventory) {
+                for (let ingredient of recipe.ingredients) {
+                    if (!inventory.hasItems(ingredient.type, ingredient.count)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            
+            craft(recipe, inventory) {
+                if (!this.canCraft(recipe, inventory)) return false;
+                
+                // Убираем ингредиенты
+                for (let ingredient of recipe.ingredients) {
+                    inventory.removeItem(ingredient.type, ingredient.count);
+                }
+                
+                // Добавляем результат
+                return inventory.addItem(recipe.result);
+            }
+            
+            draw(ctx) {
+                if (!this.isOpen) return;
+                
+                // Фон меню крафта
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+                ctx.fillRect(100, 80, CANVAS_WIDTH - 200, CANVAS_HEIGHT - 160);
+                
+                // Заголовок
+                ctx.fillStyle = '#4af';
+                ctx.font = 'bold 28px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText('Крафт', CANVAS_WIDTH / 2, 120);
+                
+                // Область для рецептов
+                const recipeAreaX = 120;
+                const recipeAreaY = 150;
+                const recipeAreaWidth = CANVAS_WIDTH - 240;
+                const recipeAreaHeight = 350;
+                const recipeHeight = 60;
+                
+                // Расчет максимального скролла
+                const totalRecipesHeight = this.recipes.length * recipeHeight;
+                this.maxScrollOffset = Math.max(0, totalRecipesHeight - recipeAreaHeight);
+                
+                // Область для отрисовки рецептов (с клиппингом)
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(recipeAreaX, recipeAreaY, recipeAreaWidth, recipeAreaHeight);
+                ctx.clip();
+                
+                // Фон области рецептов
+                ctx.fillStyle = 'rgba(30, 30, 50, 0.8)';
+                ctx.fillRect(recipeAreaX, recipeAreaY, recipeAreaWidth, recipeAreaHeight);
+                
+                // Рецепты
+                const startY = recipeAreaY - this.scrollOffset;
+                
+                for (let i = 0; i < this.recipes.length; i++) {
+                    const recipe = this.recipes[i];
+                    const y = startY + i * recipeHeight;
+                    
+                    // Фон рецепта
+                    const canCraft = this.canCraft(recipe, game.player.inventory);
+                    ctx.fillStyle = canCraft ? 'rgba(50, 50, 70, 0.8)' : 'rgba(70, 30, 30, 0.8)';
+                    ctx.fillRect(recipeAreaX + 10, y + 5, recipeAreaWidth - 20, recipeHeight - 10);
+                    
+                    // Название рецепта
+                    ctx.fillStyle = canCraft ? '#8cf' : '#f88';
+                    ctx.font = 'bold 18px Courier New';
+                    ctx.textAlign = 'left';
+                    ctx.fillText(recipe.name, recipeAreaX + 30, y + 30);
+                    
+                    // Ингредиенты
+                    ctx.fillStyle = canCraft ? '#ccc' : '#aaa';
+                    ctx.font = '14px Courier New';
+                    let ingredientText = '';
+                    for (let j = 0; j < recipe.ingredients.length; j++) {
+                        const ing = recipe.ingredients[j];
+                        ingredientText += `${ing.count}x ${ITEM_NAMES[ing.type]}`;
+                        if (j < recipe.ingredients.length - 1) ingredientText += ', ';
+                    }
+                    ctx.fillText(ingredientText, recipeAreaX + 30, y + 50);
+                    
+                    // Результат
+                    ctx.fillStyle = ITEM_COLORS[recipe.result];
+                    ctx.fillRect(CANVAS_WIDTH - 250, y + 10, 40, 40);
+                    ctx.fillStyle = '#fff';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(ITEM_NAMES[recipe.result], CANVAS_WIDTH - 230, y + 60);
+                    
+                    // Подсветка при наведении
+                    const mouseInRecipe = game.mouse.x >= recipeAreaX + 10 && 
+                                         game.mouse.x <= recipeAreaX + recipeAreaWidth - 10 && 
+                                         game.mouse.y >= y + 5 && 
+                                         game.mouse.y <= y + recipeHeight - 5;
+                    
+                    if (mouseInRecipe) {
+                        ctx.strokeStyle = canCraft ? '#4af' : '#f44';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(recipeAreaX + 10, y + 5, recipeAreaWidth - 20, recipeHeight - 10);
+                        
+                        // Клик для крафта
+                        if (game.mouse.clicked && canCraft) {
+                            if (this.craft(recipe, game.player.inventory)) {
+                                game.mouse.clicked = false;
+                                game.showStatus(`Создан: ${ITEM_NAMES[recipe.result]}`);
+                            }
+                        }
+                    }
+                }
+                
+                ctx.restore();
+                
+                // Полоса прокрутки (если нужно)
+                if (totalRecipesHeight > recipeAreaHeight) {
+                    const scrollbarWidth = 10;
+                    const scrollbarX = recipeAreaX + recipeAreaWidth - scrollbarWidth - 5;
+                    const scrollbarHeight = recipeAreaHeight;
+                    const thumbHeight = (recipeAreaHeight / totalRecipesHeight) * scrollbarHeight;
+                    const thumbY = recipeAreaY + (this.scrollOffset / totalRecipesHeight) * scrollbarHeight;
+                    
+                    // Фон полосы прокрутки
+                    ctx.fillStyle = 'rgba(100, 100, 120, 0.5)';
+                    ctx.fillRect(scrollbarX, recipeAreaY, scrollbarWidth, scrollbarHeight);
+                    
+                    // Ползунок
+                    ctx.fillStyle = '#4af';
+                    ctx.fillRect(scrollbarX, thumbY, scrollbarWidth, thumbHeight);
+                    
+                    // Контур ползунка
+                    ctx.strokeStyle = '#fff';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(scrollbarX, thumbY, scrollbarWidth, thumbHeight);
+                    
+                    // Обработка клика по полосе прокрутки
+                    if (game.mouse.clicked && 
+                        game.mouse.x >= scrollbarX && 
+                        game.mouse.x <= scrollbarX + scrollbarWidth && 
+                        game.mouse.y >= recipeAreaY && 
+                        game.mouse.y <= recipeAreaY + scrollbarHeight) {
+                        
+                        const clickPosition = game.mouse.y - recipeAreaY;
+                        const newScrollOffset = (clickPosition / scrollbarHeight) * totalRecipesHeight;
+                        this.scrollOffset = Math.max(0, Math.min(newScrollOffset, this.maxScrollOffset));
+                    }
+                }
+                
+                // Подсказки
+                ctx.fillStyle = '#aaa';
+                ctx.font = '14px Courier New';
+                ctx.textAlign = 'center';
+                ctx.fillText('Используйте колесо мыши для прокрутки', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 100);
+                ctx.fillText('Нажмите ESC для закрытия', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 80);
+            }
+            
+            handleWheel(deltaY) {
+                if (!this.isOpen) return;
+                
+                this.scrollOffset += deltaY * 0.5;
+                this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, this.maxScrollOffset));
+            }
+        }
+        
+        // ============================
+        // КАМЕРА
+        // ============================
+        class Camera {
+            constructor() {
+                this.x = 0;
+                this.y = 0;
+            }
+            
+            update(player) {
+                // Центрируем камеру на игроке
+                this.x = player.x - CANVAS_WIDTH / 2;
+                this.y = player.y - CANVAS_HEIGHT / 2;
+                
+                // Ограничиваем камеру в пределах мира
+                this.x = Math.max(0, Math.min(this.x, WORLD_WIDTH * TILE_SIZE - CANVAS_WIDTH));
+                this.y = Math.max(0, Math.min(this.y, WORLD_HEIGHT * TILE_SIZE - CANVAS_HEIGHT));
+            }
+        }
+        
+        // ============================
+        // ОСНОВНАЯ ИГРА
+        // ============================
+        class Game {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.world = new World();
+                this.player = new Player();
+                this.craftingSystem = new CraftingSystem();
+                this.camera = new Camera();
+                this.boss = null;
+                this.bossSpawned = false;
+                this.gameOver = false;
+                this.gameWon = false;
+                this.lastTime = 0;
+                this.showSmeltHint = false;
+                this.showLevelChangeHint = false;
+                
+                // Управление
+                this.keys = {};
+                this.mouse = {
+                    x: 0,
+                    y: 0,
+                    clicked: false
+                };
+                
+                // Статусное сообщение
+                this.statusMessage = '';
+                this.statusTimer = 0;
+                
+                // Инициализация обработчиков событий
+                this.initEventListeners();
+                
+                // Запуск игрового цикла
+                requestAnimationFrame(this.gameLoop.bind(this));
+            }
+            
+            initEventListeners() {
+                // Клавиатура
+                document.addEventListener('keydown', (e) => {
+                    this.keys[e.code] = true;
+                    
+                    // Выбор слота инвентаря (1-0)
+                    if (e.code >= 'Digit1' && e.code <= 'Digit9') {
+                        const slotIndex = parseInt(e.code[5]) - 1;
+                        if (slotIndex >= 0 && slotIndex < this.player.inventory.slots.length) {
+                            this.player.selectedSlot = slotIndex;
+                        }
+                    }
+                    if (e.code === 'Digit0') {
+                        this.player.selectedSlot = 9;
+                    }
+                    
+                    // Открытие/закрытие меню крафта
+                    if (e.code === 'KeyC') {
+                        this.craftingSystem.isOpen = !this.craftingSystem.isOpen;
+                        // Сбрасываем скролл при открытии меню
+                        if (this.craftingSystem.isOpen) {
+                            this.craftingSystem.scrollOffset = 0;
+                        }
+                    }
+                    
+                    // Закрытие меню крафта
+                    if (e.code === 'Escape') {
+                        this.craftingSystem.isOpen = false;
+                    }
+                    
+                    // Сбор ресурсов
+                    if (e.code === 'KeyE') {
+                        this.collectResourceWithE();
+                    }
+                    
+                    // Плавка руды
+                    if (e.code === 'KeyF') {
+                        this.smeltOre();
+                    }
+                    
+                    // Смена уровня (спуск/подъем)
+                    if (e.code === 'Space') {
+                        this.changeLevel();
+                    }
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    this.keys[e.code] = false;
+                });
+                
+                // Мышь
+                this.canvas.addEventListener('mousemove', (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    this.mouse.x = e.clientX - rect.left;
+                    this.mouse.y = e.clientY - rect.top;
+                });
+                
+                this.canvas.addEventListener('mousedown', (e) => {
+                    if (e.button === 0) { // Левая кнопка мыши
+                        this.mouse.clicked = true;
+                        
+                        // Если открыто меню крафта, клик обрабатывается там
+                        if (!this.craftingSystem.isOpen) {
+                            // Если выбран молот и есть босс, атакуем
+                            if (this.boss && this.boss.alive && this.player.currentLevel === WORLD_LEVELS.SURFACE) {
+                                const selectedItem = this.player.inventory.getSelectedItem();
+                                if ((selectedItem.type === ITEM_TYPES.HAMMER || 
+                                     selectedItem.type === ITEM_TYPES.IRON_HAMMER) && 
+                                    this.player.canAttack()) {
+                                    const worldX = this.mouse.x + this.camera.x;
+                                    const worldY = this.mouse.y + this.camera.y;
+                                    const dx = worldX - this.boss.x;
+                                    const dy = worldY - this.boss.y;
+                                    const distance = Math.sqrt(dx * dx + dy * dy);
+                                    
+                                    if (distance < 100) {
+                                        const damage = selectedItem.type === ITEM_TYPES.IRON_HAMMER ? 30 : 20;
+                                        this.boss.takeDamage(damage);
+                                        this.player.attack();
+                                        this.showStatus('Босс атакован!');
+                                        
+                                        if (!this.boss.alive) {
+                                            this.gameWon = true;
+                                            this.showStatus('ПОБЕДА! Босс побежден!');
+                                        }
+                                    }
+                                    return;
+                                }
+                            }
+                            
+                            // Использование инструментов на ЛКМ
+                            const selectedItem = this.player.inventory.getSelectedItem();
+                            
+                            // Использование лопаты для создания шахты
+                            if (selectedItem.type === ITEM_TYPES.SHOVEL && this.player.currentLevel === WORLD_LEVELS.SURFACE) {
+                                this.useShovel();
+                                return;
+                            }
+                            
+                            // Использование кирки для добычи в пещере
+                            if (selectedItem.type === ITEM_TYPES.PICKAXE && this.player.currentLevel === WORLD_LEVELS.CAVE) {
+                                this.usePickaxe();
+                                return;
+                            }
+                            
+                            // Строительство (для других предметов)
+                            this.placeBuilding();
+                        }
+                    }
+                });
+                
+                this.canvas.addEventListener('mouseup', (e) => {
+                    if (e.button === 0) {
+                        this.mouse.clicked = false;
+                    }
+                });
+                
+                // Колесо мыши для выбора слота инвентаря и прокрутки меню крафта
+                this.canvas.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    
+                    // Если открыто меню крафта, прокручиваем его
+                    if (this.craftingSystem.isOpen) {
+                        this.craftingSystem.handleWheel(e.deltaY);
+                        return;
+                    }
+                    
+                    // Иначе меняем выбранный слот инвентаря
+                    if (e.deltaY > 0) {
+                        this.player.selectedSlot = (this.player.selectedSlot + 1) % this.player.inventory.slots.length;
+                    } else {
+                        this.player.selectedSlot = (this.player.selectedSlot - 1 + this.player.inventory.slots.length) % this.player.inventory.slots.length;
+                    }
+                });
+            }
+            
+            collectResourceWithE() {
+                const playerCenterX = this.player.x + this.player.size / 2;
+                const playerCenterY = this.player.y + this.player.size / 2;
+                
+                // Проверяем ресурсы вокруг игрока (только на поверхности)
+                if (this.player.currentLevel === WORLD_LEVELS.SURFACE) {
+                    const checkRadius = TILE_SIZE * 1.5;
+                    
+                    for (let dx = -checkRadius; dx <= checkRadius; dx += TILE_SIZE) {
+                        for (let dy = -checkRadius; dy <= checkRadius; dy += TILE_SIZE) {
+                            const checkX = playerCenterX + dx;
+                            const checkY = playerCenterY + dy;
+                            
+                            // Проверяем, есть ли дерево или камень
+                            const tileType = this.world.getTileAt(checkX, checkY, this.player.currentLevel);
+                            if (tileType === TILE_TYPES.STONE || tileType === TILE_TYPES.TREE) {
+                                const resourceType = this.world.collectResource(checkX, checkY, this.player.currentLevel, null);
+                                if (resourceType !== ITEM_TYPES.NONE) {
+                                    const itemName = ITEM_NAMES[resourceType];
+                                    if (this.player.inventory.addItem(resourceType)) {
+                                        this.showStatus(`Собрано: ${itemName}`);
+                                    } else {
+                                        this.showStatus('Инвентарь полон!');
+                                    }
+                                }
+                                return;
+                            }
+                        }
+                    }
+                    
+                    this.showStatus('Рядом нет ресурсов для сбора!');
+                } else {
+                    this.showStatus('В пещере используйте кирку (ЛКМ) для добычи!');
+                }
+            }
+            
+            useShovel() {
+                // Использование лопаты для создания шахты
+                const worldX = this.mouse.x + this.camera.x;
+                const worldY = this.mouse.y + this.camera.y;
+                
+                // Проверяем, можно ли создать шахту здесь
+                const tileType = this.world.getTileAt(worldX, worldY, this.player.currentLevel);
+                if (tileType === TILE_TYPES.GRASS) {
+                    if (this.world.createMineShaft(worldX, worldY)) {
+                        this.showStatus('Шахта создана! Используйте ПРОБЕЛ рядом с шахтой, чтобы спуститься в пещеру.');
+                    } else {
+                        this.showStatus('Невозможно создать шахту здесь!');
+                    }
+                } else {
+                    this.showStatus('Шахту можно создать только на траве!');
+                }
+            }
+            
+            usePickaxe() {
+                // Использование кирки для добычи в пещере
+                const worldX = this.mouse.x + this.camera.x;
+                const worldY = this.mouse.y + this.camera.y;
+                
+                // Проверяем, находится ли позиция в темноте
+                if (this.player.isPositionInDarkness(worldX, worldY)) {
+                    this.showStatus('Слишком темно! Подойдите ближе.');
+                    return;
+                }
+                
+                // Проверяем, можно ли добыть здесь
+                const tileType = this.world.getTileAt(worldX, worldY, this.player.currentLevel);
+                const canMine = tileType === CAVE_TILE_TYPES.CAVE_WALL || 
+                               tileType === CAVE_TILE_TYPES.IRON_ORE || 
+                               tileType === CAVE_TILE_TYPES.COAL_ORE;
+                
+                if (canMine) {
+                    const resourceType = this.world.collectResource(worldX, worldY, this.player.currentLevel, ITEM_TYPES.PICKAXE);
+                    if (resourceType !== ITEM_TYPES.NONE) {
+                        const itemName = ITEM_NAMES[resourceType];
+                        if (this.player.inventory.addItem(resourceType)) {
+                            this.showStatus(`Добыто: ${itemName}`);
+                        } else {
+                            this.showStatus('Инвентарь полон!');
+                        }
+                    }
+                } else {
+                    this.showStatus('Здесь нечего добывать!');
+                }
+            }
+            
+            placeBuilding() {
+                const selectedItem = this.player.inventory.getSelectedItem();
+                
+                // Проверяем, можно ли разместить этот предмет
+                const placeableItems = [
+                    ITEM_TYPES.WALL, ITEM_TYPES.ALTAR, ITEM_TYPES.FURNACE, 
+                    ITEM_TYPES.LADDER
+                ];
+                
+                if (placeableItems.includes(selectedItem.type)) {
+                    // Вычисляем координаты в мире
+                    const worldX = this.mouse.x + this.camera.x;
+                    const worldY = this.mouse.y + this.camera.y;
+                    
+                    // В пещере проверяем, не в темноте ли место
+                    if (this.player.currentLevel === WORLD_LEVELS.CAVE && 
+                        this.player.isPositionInDarkness(worldX, worldY)) {
+                        this.showStatus('Слишком темно для строительства!');
+                        return;
+                    }
+                    
+                    // Проверяем, что игрок не пытается построить слишком далеко
+                    const playerCenterX = this.player.x + this.player.size / 2;
+                    const playerCenterY = this.player.y + this.player.size / 2;
+                    const distance = Math.sqrt(
+                        Math.pow(worldX - playerCenterX, 2) + 
+                        Math.pow(worldY - playerCenterY, 2)
+                    );
+                    
+                    if (distance > TILE_SIZE * 5) {
+                        this.showStatus('Слишком далеко для строительства!');
+                        return;
+                    }
+                    
+                    // Сохраняем тип предмета до удаления из инвентаря
+                    const itemType = selectedItem.type;
+                    
+                    // Размещаем предмет
+                    if (this.world.placeTile(worldX, worldY, itemType, this.player.currentLevel)) {
+                        // Убираем предмет из инвентаря
+                        if (this.player.inventory.removeItem(itemType, 1)) {
+                            const itemName = ITEM_NAMES[itemType];
+                            this.showStatus(`Построено: ${itemName}`);
+                            
+                            // Если построен алтарь, спауним босса
+                            if (itemType === ITEM_TYPES.ALTAR && !this.bossSpawned) {
+                                this.spawnBoss();
+                            }
+                        } else {
+                            // Если не удалось удалить предмет из инвентаря, удаляем построенный тайл
+                            const tileX = Math.floor(worldX / TILE_SIZE);
+                            const tileY = Math.floor(worldY / TILE_SIZE);
+                            if (this.player.currentLevel === WORLD_LEVELS.SURFACE) {
+                                this.world.surfacePlacedTiles.delete(`${tileX},${tileY}`);
+                            } else {
+                                this.world.cavePlacedTiles.delete(`${tileX},${tileY}`);
+                            }
+                            this.showStatus('Недостаточно предметов для строительства!');
+                        }
+                    } else {
+                        this.showStatus('Невозможно построить здесь!');
+                    }
+                } else if (selectedItem.type !== ITEM_TYPES.NONE && 
+                          selectedItem.type !== ITEM_TYPES.SHOVEL && 
+                          selectedItem.type !== ITEM_TYPES.PICKAXE) {
+                    this.showStatus('Этот предмет нельзя построить!');
+                }
+            }
+            
+            smeltOre() {
+                // Проверяем, рядом ли печка
+                if (this.world.isNearFurnace(this.player.x + this.player.size/2, 
+                    this.player.y + this.player.size/2, this.player.currentLevel)) {
+                    
+                    // Проверяем, может ли игрок плавить
+                    if (this.player.canSmelt()) {
+                        // Проверяем наличие угля и железной руды
+                        const coalCount = this.player.inventory.getItemCount(ITEM_TYPES.COAL);
+                        const ironOreCount = this.player.inventory.getItemCount(ITEM_TYPES.IRON_ORE);
+                        
+                        if (coalCount >= 1 && ironOreCount >= 1) {
+                            // Плавим железную руду
+                            this.player.inventory.removeItem(ITEM_TYPES.COAL, 1);
+                            this.player.inventory.removeItem(ITEM_TYPES.IRON_ORE, 1);
+                            this.player.inventory.addItem(ITEM_TYPES.IRON_BAR, 1);
+                            
+                            this.player.smelt();
+                            this.showStatus('Плавка: создан железный слиток!');
+                        } else {
+                            this.showStatus('Нужны уголь и железная руда для плавки!');
+                        }
+                    } else {
+                        this.showStatus('Подождите перед следующей плавкой!');
+                    }
+                } else {
+                    this.showStatus('Подойдите к печке для плавки!');
+                }
+            }
+            
+            changeLevel() {
+                // Проверяем, рядом ли шахта или лестница
+                if (this.world.isNearMineShaftOrLadder(this.player.x + this.player.size/2, 
+                    this.player.y + this.player.size/2, this.player.currentLevel)) {
+                    
+                    if (this.player.currentLevel === WORLD_LEVELS.SURFACE) {
+                        // Спускаемся в пещеру
+                        this.player.currentLevel = WORLD_LEVELS.CAVE;
+                        // Помещаем игрока в центр пещеры (рядом с лестницей на поверхность)
+                        this.player.x = Math.floor(WORLD_WIDTH / 2) * TILE_SIZE;
+                        this.player.y = Math.floor(WORLD_HEIGHT / 2) * TILE_SIZE;
+                        // Ищем свободное место рядом с лестницей
+                        let foundSpot = false;
+                        for (let dy = -1; dy <= 1 && !foundSpot; dy++) {
+                            for (let dx = -1; dx <= 1 && !foundSpot; dx++) {
+                                if (dx === 0 && dy === 0) continue;
+                                const newX = this.player.x + dx * TILE_SIZE;
+                                const newY = this.player.y + dy * TILE_SIZE;
+                                if (!this.player.checkCollision(newX, newY, this.world)) {
+                                    this.player.x = newX;
+                                    this.player.y = newY;
+                                    foundSpot = true;
+                                }
+                            }
+                        }
+                        this.showStatus('Вы спустились в пещеру! Используйте кирку (ЛКМ) для добычи руды.');
+                    } else {
+                        // Поднимаемся на поверхность
+                        this.player.currentLevel = WORLD_LEVELS.SURFACE;
+                        
+                        // Находим ближайшую шахту для выхода
+                        let foundShaft = false;
+                        for (let [key, itemType] of this.world.surfacePlacedTiles) {
+                            if (itemType === ITEM_TYPES.MINE_SHAFT) {
+                                const [x, y] = key.split(',').map(Number);
+                                // Помещаем игрока рядом с шахтой, а не на ней
+                                this.player.x = x * TILE_SIZE + TILE_SIZE;
+                                this.player.y = y * TILE_SIZE;
+                                
+                                // Ищем свободное место рядом с шахтой
+                                let foundSpot = false;
+                                for (let dy = -1; dy <= 1 && !foundSpot; dy++) {
+                                    for (let dx = -1; dx <= 1 && !foundSpot; dx++) {
+                                        if (dx === 0 && dy === 0) continue;
+                                        const newX = this.player.x + dx * TILE_SIZE;
+                                        const newY = this.player.y + dy * TILE_SIZE;
+                                        if (!this.player.checkCollision(newX, newY, this.world)) {
+                                            this.player.x = newX;
+                                            this.player.y = newY;
+                                            foundSpot = true;
+                                        }
+                                    }
+                                }
+                                foundShaft = true;
+                                break;
+                            }
+                        }
+                        
+                        // Если не нашли шахту, выходим в центр мира
+                        if (!foundShaft) {
+                            this.player.x = Math.floor(WORLD_WIDTH / 2) * TILE_SIZE;
+                            this.player.y = Math.floor(WORLD_HEIGHT / 2) * TILE_SIZE;
+                            // Ищем свободное место
+                            let foundSpot = false;
+                            for (let dy = -1; dy <= 1 && !foundSpot; dy++) {
+                                for (let dx = -1; dx <= 1 && !foundSpot; dx++) {
+                                    if (dx === 0 && dy === 0) continue;
+                                    const newX = this.player.x + dx * TILE_SIZE;
+                                    const newY = this.player.y + dy * TILE_SIZE;
+                                    if (!this.player.checkCollision(newX, newY, this.world)) {
+                                        this.player.x = newX;
+                                        this.player.y = newY;
+                                        foundSpot = true;
+                                    }
+                                }
+                            }
+                        }
+                        this.showStatus('Вы поднялись на поверхность!');
+                    }
+                } else {
+                    this.showStatus('Подойдите к шахте или лестнице!');
+                }
+            }
+            
+            spawnBoss() {
+                // Спауним босса в случайном месте, но не слишком близко к игроку
+                let spawnX, spawnY;
+                let attempts = 0;
+                const maxAttempts = 20;
+                
+                do {
+                    spawnX = Math.random() * (WORLD_WIDTH * TILE_SIZE - 200) + 100;
+                    spawnY = Math.random() * (WORLD_HEIGHT * TILE_SIZE - 200) + 100;
+                    attempts++;
+                    
+                    // Проверяем расстояние до игрока
+                    const dx = spawnX - this.player.x;
+                    const dy = spawnY - this.player.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance > TILE_SIZE * 10) {
+                        break;
+                    }
+                } while (attempts < maxAttempts);
+                
+                this.boss = new Boss(spawnX, spawnY);
+                this.bossSpawned = true;
+                this.showStatus('БОСС ПОЯВИЛСЯ! Приготовьтесь к битве!');
+            }
+            
+            showStatus(message) {
+                this.statusMessage = message;
+                this.statusTimer = 180; // ~3 секунды при 60 FPS
+                document.getElementById('status').textContent = message;
+            }
+            
+            update(deltaTime) {
+                // Если игра окончена, не обновляем
+                if (this.gameOver || this.gameWon) return;
+                
+                // Обновляем игрока
+                this.player.update(this.keys, this.world, deltaTime);
+                
+                // Обновляем камеру
+                this.camera.update(this.player);
+                
+                // Обновляем босса
+                if (this.boss && this.boss.alive && this.player.currentLevel === WORLD_LEVELS.SURFACE) {
+                    this.boss.update(this.player, deltaTime);
+                    
+                    // Проверяем смерть игрока от босса
+                    if (this.player.health <= 0) {
+                        this.gameOver = true;
+                        this.showStatus('ВЫ ПРОИГРАЛИ! Босс победил.');
+                    }
+                }
+                
+                // Проверяем, рядом ли печка
+                this.showSmeltHint = this.world.isNearFurnace(
+                    this.player.x + this.player.size/2, 
+                    this.player.y + this.player.size/2, 
+                    this.player.currentLevel
+                );
+                
+                // Проверяем, рядом ли шахта/лестница
+                this.showLevelChangeHint = this.world.isNearMineShaftOrLadder(
+                    this.player.x + this.player.size/2, 
+                    this.player.y + this.player.size/2, 
+                    this.player.currentLevel
+                );
+                
+                // Обновляем таймер статусного сообщения
+                if (this.statusTimer > 0) {
+                    this.statusTimer--;
+                }
+            }
+            
+            draw() {
+                // Очистка canvas
+                this.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                
+                // Рисуем мир (текущий уровень)
+                this.world.draw(this.ctx, this.camera, this.player.currentLevel);
+                
+                // Рисуем босса (только на поверхности)
+                if (this.boss && this.boss.alive && this.player.currentLevel === WORLD_LEVELS.SURFACE) {
+                    this.boss.draw(this.ctx, this.camera);
+                }
+                
+                // Рисуем игрока
+                this.player.draw(this.ctx, this.camera);
+                
+                // Рисуем темноту в пещере
+                if (this.player.currentLevel === WORLD_LEVELS.CAVE) {
+                    this.world.drawCaveDarkness(this.ctx, this.camera, this.player);
+                }
+                
+                // Рисуем интерфейс
+                this.player.drawHealthBar(this.ctx);
+                this.player.drawLevelIndicator(this.ctx);
+                this.player.inventory.draw(this.ctx);
+                
+                // Рисуем меню крафта
+                this.craftingSystem.draw(this.ctx);
+                
+                // Рисуем экран победы/поражения
+                if (this.gameOver) {
+                    this.drawGameOver();
+                } else if (this.gameWon) {
+                    this.drawGameWon();
+                }
+                
+                // Рисуем подсказки
+                if (this.showSmeltHint && !this.craftingSystem.isOpen) {
+                    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    this.ctx.fillRect(CANVAS_WIDTH/2 - 150, 60, 300, 30);
+                    
+                    this.ctx.fillStyle = '#FFD700';
+                    this.ctx.font = 'bold 16px Courier New';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText('Нажмите F для плавки руды в печке', CANVAS_WIDTH/2, 80);
+                }
+                
+                if (this.showLevelChangeHint && !this.craftingSystem.isOpen) {
+                    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    this.ctx.fillRect(CANVAS_WIDTH/2 - 150, 100, 300, 30);
+                    
+                    const hintText = this.player.currentLevel === WORLD_LEVELS.SURFACE ? 
+                        'Нажмите ПРОБЕЛ чтобы спуститься в пещеру' : 
+                        'Нажмите ПРОБЕЛ чтобы подняться на поверхность';
+                    
+                    this.ctx.fillStyle = '#4af';
+                    this.ctx.font = 'bold 16px Courier New';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText(hintText, CANVAS_WIDTH/2, 120);
+                }
+                
+                // Рисуем прицел для инструментов
+                if (!this.craftingSystem.isOpen) {
+                    const selectedItem = this.player.inventory.getSelectedItem();
+                    const ctx = this.ctx;
+                    
+                    // Прицел для лопаты на поверхности
+                    if (selectedItem.type === ITEM_TYPES.SHOVEL && this.player.currentLevel === WORLD_LEVELS.SURFACE) {
+                        const worldX = this.mouse.x + this.camera.x;
+                        const worldY = this.mouse.y + this.camera.y;
+                        const tileType = this.world.getTileAt(worldX, worldY, this.player.currentLevel);
+                        const canUse = tileType === TILE_TYPES.GRASS;
+                        
+                        ctx.strokeStyle = canUse ? '#4af' : '#f44';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([5, 5]);
+                        ctx.strokeRect(
+                            this.mouse.x - TILE_SIZE/2, 
+                            this.mouse.y - TILE_SIZE/2, 
+                            TILE_SIZE, 
+                            TILE_SIZE
+                        );
+                        ctx.setLineDash([]);
+                        
+                        ctx.fillStyle = canUse ? '#4af' : '#f44';
+                        ctx.font = '12px Courier New';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('Лопата: создание шахты', this.mouse.x, this.mouse.y - 10);
+                        
+                        if (!canUse) {
+                            ctx.fillText('Можно использовать только на траве!', this.mouse.x, this.mouse.y + TILE_SIZE + 15);
+                        }
+                    }
+                    
+                    // Прицел для кирки в пещере
+                    else if (selectedItem.type === ITEM_TYPES.PICKAXE && this.player.currentLevel === WORLD_LEVELS.CAVE) {
+                        const worldX = this.mouse.x + this.camera.x;
+                        const worldY = this.mouse.y + this.camera.y;
+                        const tileType = this.world.getTileAt(worldX, worldY, this.player.currentLevel);
+                        const canUse = (tileType === CAVE_TILE_TYPES.CAVE_WALL || 
+                                       tileType === CAVE_TILE_TYPES.IRON_ORE || 
+                                       tileType === CAVE_TILE_TYPES.COAL_ORE) &&
+                                       !this.player.isPositionInDarkness(worldX, worldY);
+                        
+                        ctx.strokeStyle = canUse ? '#4af' : '#f44';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([5, 5]);
+                        ctx.strokeRect(
+                            this.mouse.x - TILE_SIZE/2, 
+                            this.mouse.y - TILE_SIZE/2, 
+                            TILE_SIZE, 
+                            TILE_SIZE
+                        );
+                        ctx.setLineDash([]);
+                        
+                        ctx.fillStyle = canUse ? '#4af' : '#f44';
+                        ctx.font = '12px Courier New';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('Кирка: добыча ресурсов', this.mouse.x, this.mouse.y - 10);
+                        
+                        if (!canUse) {
+                            if (this.player.isPositionInDarkness(worldX, worldY)) {
+                                ctx.fillText('Слишком темно! Подойдите ближе.', this.mouse.x, this.mouse.y + TILE_SIZE + 15);
+                            } else {
+                                ctx.fillText('Можно использовать только на стенах и рудах!', this.mouse.x, this.mouse.y + TILE_SIZE + 15);
+                            }
+                        }
+                    }
+                    
+                    // Проверяем, можно ли построить этот предмет
+                    const placeableItems = [
+                        ITEM_TYPES.WALL, ITEM_TYPES.ALTAR, ITEM_TYPES.FURNACE, 
+                        ITEM_TYPES.LADDER
+                    ];
+                    
+                    if (placeableItems.includes(selectedItem.type)) {
+                        // Проверяем, можно ли построить здесь
+                        const worldX = this.mouse.x + this.camera.x;
+                        const worldY = this.mouse.y + this.camera.y;
+                        const tileX = Math.floor(worldX / TILE_SIZE);
+                        const tileY = Math.floor(worldY / TILE_SIZE);
+                        const key = `${tileX},${tileY}`;
+                        
+                        let canBuild = false;
+                        if (tileX >= 0 && tileX < WORLD_WIDTH && tileY >= 0 && tileY < WORLD_HEIGHT) {
+                            if (this.player.currentLevel === WORLD_LEVELS.SURFACE) {
+                                if (this.world.surfaceTiles[tileY][tileX] !== TILE_TYPES.WATER && 
+                                    !this.world.surfacePlacedTiles.has(key)) {
+                                    canBuild = true;
+                                }
+                            } else {
+                                if (this.world.caveTiles[tileY][tileX] === CAVE_TILE_TYPES.CAVE_FLOOR && 
+                                    !this.world.cavePlacedTiles.has(key) &&
+                                    !this.player.isPositionInDarkness(worldX, worldY)) {
+                                    canBuild = true;
+                                }
+                            }
+                        }
+                        
+                        // Проверяем расстояние до игрока
+                        const playerCenterX = this.player.x + this.player.size / 2;
+                        const playerCenterY = this.player.y + this.player.size / 2;
+                        const distance = Math.sqrt(
+                            Math.pow(worldX - playerCenterX, 2) + 
+                            Math.pow(worldY - playerCenterY, 2)
+                        );
+                        
+                        if (distance > TILE_SIZE * 5) {
+                            canBuild = false;
+                        }
+                        
+                        // Рисуем прицел
+                        ctx.strokeStyle = canBuild ? '#4af' : '#f44';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([5, 5]);
+                        ctx.strokeRect(
+                            this.mouse.x - TILE_SIZE/2, 
+                            this.mouse.y - TILE_SIZE/2, 
+                            TILE_SIZE, 
+                            TILE_SIZE
+                        );
+                        ctx.setLineDash([]);
+                        
+                        // Подпись
+                        ctx.fillStyle = canBuild ? '#4af' : '#f44';
+                        ctx.font = '12px Courier New';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(ITEM_NAMES[selectedItem.type], this.mouse.x, this.mouse.y - 10);
+                        
+                        // Если нельзя построить, показываем причину
+                        if (!canBuild) {
+                            if (distance > TILE_SIZE * 5) {
+                                ctx.fillText('Слишком далеко!', this.mouse.x, this.mouse.y + TILE_SIZE + 15);
+                            } else if (this.player.currentLevel === WORLD_LEVELS.CAVE && 
+                                      this.player.isPositionInDarkness(worldX, worldY)) {
+                                ctx.fillText('Слишком темно!', this.mouse.x, this.mouse.y + TILE_SIZE + 15);
+                            } else {
+                                ctx.fillText('Нельзя построить здесь!', this.mouse.x, this.mouse.y + TILE_SIZE + 15);
+                            }
+                        }
+                    } else if ((selectedItem.type === ITEM_TYPES.HAMMER || 
+                              selectedItem.type === ITEM_TYPES.IRON_HAMMER) && 
+                             this.boss && this.boss.alive && 
+                             this.player.currentLevel === WORLD_LEVELS.SURFACE) {
+                        // Прицел для атаки босса
+                        this.ctx.strokeStyle = selectedItem.type === ITEM_TYPES.IRON_HAMMER ? '#FFD700' : '#f44';
+                        this.ctx.lineWidth = 2;
+                        this.ctx.beginPath();
+                        this.ctx.arc(this.mouse.x, this.mouse.y, 15, 0, Math.PI * 2);
+                        this.ctx.stroke();
+                        
+                        this.ctx.fillStyle = selectedItem.type === ITEM_TYPES.IRON_HAMMER ? '#FFD700' : '#f44';
+                        this.ctx.font = '12px Courier New';
+                        this.ctx.textAlign = 'center';
+                        this.ctx.fillText('Атаковать', this.mouse.x, this.mouse.y - 25);
+                    }
+                }
+                
+                // Статусное сообщение
+                if (this.statusTimer > 0) {
+                    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                    this.ctx.fillRect(10, CANVAS_HEIGHT - 40, CANVAS_WIDTH - 20, 30);
+                    
+                    this.ctx.fillStyle = '#fff';
+                    this.ctx.font = '16px Courier New';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText(this.statusMessage, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 20);
+                }
+            }
+            
+            drawGameOver() {
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                this.ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                
+                this.ctx.fillStyle = '#f44';
+                this.ctx.font = 'bold 48px Courier New';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('ПОРАЖЕНИЕ', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 40);
+                
+                this.ctx.fillStyle = '#fff';
+                this.ctx.font = '24px Courier New';
+                this.ctx.fillText('Обновите страницу для перезапуска', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 40);
+            }
+            
+            drawGameWon() {
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+                this.ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                
+                this.ctx.fillStyle = '#4af';
+                this.ctx.font = 'bold 48px Courier New';
+                this.ctx.textAlign = 'center';
+                this.ctx.fillText('ПОБЕДА!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 40);
+                
+                this.ctx.fillStyle = '#fff';
+                this.ctx.font = '24px Courier New';
+                this.ctx.fillText('Босс побежден!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
+                this.ctx.fillText('Обновите страницу для перезапуска', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 60);
+            }
+            
+            gameLoop(timestamp) {
+                // Вычисляем deltaTime
+                const deltaTime = timestamp - this.lastTime || 0;
+                this.lastTime = timestamp;
+                
+                // Обновляем и рисуем игру
+                this.update(deltaTime);
+                this.draw();
+                
+                // Продолжаем игровой цикл
+                requestAnimationFrame(this.gameLoop.bind(this));
+            }
+        }
+        
+        // ============================
+        // ЗАПУСК ИГРЫ
+        // ============================
+        // Ждем загрузки DOM
+        document.addEventListener('DOMContentLoaded', () => {
+            // Создаем и запускаем игру
+            window.game = new Game();
+        });
+    </script>
+</body>
+</html>
