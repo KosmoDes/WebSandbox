@@ -131,6 +131,8 @@
                     <li>10% шанс получить алтарь возрождения с зомби</li>
                     <li>Установите алтарь возрождения для точки респавна</li>
                     <li>Информация о боссах удалена из интерфейса</li>
+                    <li>Ночь наступает плавно с затемнением</li>
+                    <li>Зомби горят днём на поверхности</li>
                 </ul>
             </div>
         </div>
@@ -150,10 +152,10 @@
         const PLAYER_SPEED = 4;
         const BOSS_SIZE = 64;
         const CAVE_BOSS_SIZE = 72;
-        const PROJECTILE_SIZE = 20; // Увеличен с 12 до 20
+        const PROJECTILE_SIZE = 20;
         const PROJECTILE_SPEED = 3;
-        const DAY_DURATION = 300000; // 5 минут день
-        const NIGHT_DURATION = 180000; // 3 минуты ночь
+        const DAY_DURATION = 60000; // 1 минута день (изменено)
+        const NIGHT_DURATION = 30000; // 30 секунд ночь (изменено)
         const DAYS_FOR_TREE_GROWTH = 2;
         
         // Уровни мира
@@ -182,7 +184,7 @@
             CAVE_FLOOR: 11,
             IRON_ORE: 12,
             COAL_ORE: 13,
-            CAVE_EXIT: 14  // Лестница на поверхность
+            CAVE_EXIT: 14
         };
         
         // Типы предметов
@@ -205,8 +207,8 @@
             IRON_HAMMER: 15,
             TORCH: 16,
             MAGIC_SCEPTER: 17,
-            IMPROVED_PICKAXE: 18, // Новая улучшенная кирка
-            RESURRECTION_ALTAR: 19 // Новый алтарь возрождения
+            IMPROVED_PICKAXE: 18,
+            RESURRECTION_ALTAR: 19
         };
         
         // Названия предметов
@@ -253,8 +255,8 @@
             [ITEM_TYPES.IRON_HAMMER]: "#C0C0C0",
             [ITEM_TYPES.TORCH]: "#FFA500",
             [ITEM_TYPES.MAGIC_SCEPTER]: "#9370DB",
-            [ITEM_TYPES.IMPROVED_PICKAXE]: "#FFD700", // Золотой цвет для улучшенной кирки
-            [ITEM_TYPES.RESURRECTION_ALTAR]: "#00FF00" // Зеленый для алтаря возрождения
+            [ITEM_TYPES.IMPROVED_PICKAXE]: "#FFD700",
+            [ITEM_TYPES.RESURRECTION_ALTAR]: "#00FF00"
         };
         
         // Рецепты крафта
@@ -353,17 +355,17 @@
                 this.selectedSlot = 0;
                 this.inventory = new Inventory(10);
                 this.lastAttackTime = 0;
-                this.attackCooldown = 500; // мс
+                this.attackCooldown = 500;
                 this.currentLevel = WORLD_LEVELS.SURFACE;
                 this.lastSmeltTime = 0;
-                this.smeltCooldown = 1000; // мс
+                this.smeltCooldown = 1000;
                 this.isInvulnerable = false;
                 this.invulnerabilityTimer = 0;
-                this.invulnerabilityDuration = 1000; // мс
+                this.invulnerabilityDuration = 1000;
                 this.lastMagicAttackTime = 0;
-                this.magicAttackCooldown = 800; // мс
+                this.magicAttackCooldown = 800;
                 this.projectiles = [];
-                this.respawnX = WORLD_WIDTH * TILE_SIZE / 2; // Точка возрождения по умолчанию
+                this.respawnX = WORLD_WIDTH * TILE_SIZE / 2;
                 this.respawnY = WORLD_HEIGHT * TILE_SIZE / 2;
                 this.respawnLevel = WORLD_LEVELS.SURFACE;
             }
@@ -371,50 +373,41 @@
             update(keys, world, deltaTime, gameTime) {
                 let dx = 0, dy = 0;
                 
-                // Управление игроком
                 if (keys['ArrowUp'] || keys['KeyW']) dy -= this.speed;
                 if (keys['ArrowDown'] || keys['KeyS']) dy += this.speed;
                 if (keys['ArrowLeft'] || keys['KeyA']) dx -= this.speed;
                 if (keys['ArrowRight'] || keys['KeyD']) dx += this.speed;
                 
-                // Нормализация диагонального движения
                 if (dx !== 0 && dy !== 0) {
-                    dx *= 0.7071; // 1/√2
+                    dx *= 0.7071;
                     dy *= 0.7071;
                 }
                 
-                // Проверка коллизий по X
                 const newX = this.x + dx;
                 if (!this.checkCollision(newX, this.y, world)) {
                     this.x = newX;
                 }
                 
-                // Проверка коллизий по Y
                 const newY = this.y + dy;
                 if (!this.checkCollision(this.x, newY, world)) {
                     this.y = newY;
                 }
                 
-                // Ограничение в пределах мира
                 this.x = Math.max(0, Math.min(WORLD_WIDTH * TILE_SIZE - this.size, this.x));
                 this.y = Math.max(0, Math.min(WORLD_HEIGHT * TILE_SIZE - this.size, this.y));
                 
-                // Обновление времени перезарядки атаки
                 if (this.lastAttackTime > 0) {
                     this.lastAttackTime -= deltaTime;
                 }
                 
-                // Обновление времени перезарядки магической атаки
                 if (this.lastMagicAttackTime > 0) {
                     this.lastMagicAttackTime -= deltaTime;
                 }
                 
-                // Обновление времени перезарядки плавки
                 if (this.lastSmeltTime > 0) {
                     this.lastSmeltTime -= deltaTime;
                 }
                 
-                // Обновление неуязвимости
                 if (this.isInvulnerable) {
                     this.invulnerabilityTimer -= deltaTime;
                     if (this.invulnerabilityTimer <= 0) {
@@ -422,12 +415,10 @@
                     }
                 }
                 
-                // Обновление снарядов игрока (для магического скипетра)
                 for (let i = this.projectiles.length - 1; i >= 0; i--) {
                     const projectile = this.projectiles[i];
                     projectile.update(deltaTime);
                     
-                    // Проверка столкновений снарядов с врагами
                     if (gameTime.currentTime === TIME_OF_DAY.NIGHT) {
                         if (this.currentLevel === WORLD_LEVELS.SURFACE) {
                             for (let zombie of gameTime.surfaceMobs) {
@@ -448,7 +439,6 @@
                         }
                     }
                     
-                    // Проверка столкновений снарядов с боссами
                     if (this.currentLevel === WORLD_LEVELS.SURFACE && game.boss && game.boss.alive) {
                         if (projectile.checkCollision(game.boss)) {
                             game.boss.takeDamage(projectile.damage);
@@ -463,7 +453,6 @@
                         }
                     }
                     
-                    // Удаление неактивных снарядов
                     if (!projectile.active) {
                         this.projectiles.splice(i, 1);
                     }
@@ -471,10 +460,8 @@
             }
             
             checkCollision(x, y, world) {
-                // Определяем уровень мира для проверки
                 const level = this.currentLevel;
                 
-                // Проверяем коллизии с препятствиями мира
                 const left = Math.floor(x / TILE_SIZE);
                 const right = Math.floor((x + this.size - 1) / TILE_SIZE);
                 const top = Math.floor(y / TILE_SIZE);
@@ -484,37 +471,29 @@
                     for (let tx = left; tx <= right; tx++) {
                         if (tx >= 0 && tx < WORLD_WIDTH && ty >= 0 && ty < WORLD_HEIGHT) {
                             if (level === WORLD_LEVELS.SURFACE) {
-                                // Проверка коллизий на поверхности
                                 const tileType = world.surfaceTiles[ty][tx];
-                                // Вода - препятствие
                                 if (tileType === TILE_TYPES.WATER) {
                                     return true;
                                 }
                                 
-                                // Проверяем построенные тайлы
                                 const placedKey = `${tx},${ty}`;
                                 if (world.surfacePlacedTiles.has(placedKey)) {
                                     const placedType = world.surfacePlacedTiles.get(placedKey);
-                                    // Шахта не должна быть препятствием - игрок должен стоять на ней для спуска
                                     if (placedType !== ITEM_TYPES.MINE_SHAFT && placedType !== ITEM_TYPES.TORCH) {
                                         return true;
                                     }
                                 }
                             } else if (level === WORLD_LEVELS.CAVE) {
-                                // Проверка коллизий в пещере
                                 const tileType = world.caveTiles[ty][tx];
-                                // Стены пещеры и руды - препятствия
                                 if (tileType === CAVE_TILE_TYPES.CAVE_WALL || 
                                     tileType === CAVE_TILE_TYPES.IRON_ORE || 
                                     tileType === CAVE_TILE_TYPES.COAL_ORE) {
                                     return true;
                                 }
                                 
-                                // Проверяем построенные тайлы в пещере
                                 const placedKey = `${tx},${ty}`;
                                 if (world.cavePlacedTiles.has(placedKey)) {
                                     const placedType = world.cavePlacedTiles.get(placedKey);
-                                    // Лестница и факел не должны быть препятствием
                                     if (placedType !== ITEM_TYPES.LADDER && placedType !== ITEM_TYPES.TORCH) {
                                         return true;
                                     }
@@ -541,7 +520,6 @@
                 this.health -= amount;
                 if (this.health < 0) this.health = 0;
                 
-                // Активируем неуязвимость после получения урона
                 this.isInvulnerable = true;
                 this.invulnerabilityTimer = this.invulnerabilityDuration;
                 
@@ -574,16 +552,15 @@
                 
                 const playerCenterX = this.x + this.size / 2;
                 const playerCenterY = this.y + this.size / 2;
-                // Увеличен урон с 15 до 25 и размер снаряда
                 const projectile = new Projectile(
                     playerCenterX,
                     playerCenterY,
                     targetX,
                     targetY,
-                    25, // Увеличенный урон снаряда
+                    25,
                     PROJECTILE_SPEED * 1.2,
-                    '#9370DB', // Фиолетовый цвет для магического снаряда
-                    20 // Увеличенный размер
+                    '#9370DB',
+                    20
                 );
                 
                 this.projectiles.push(projectile);
@@ -596,7 +573,7 @@
                 this.currentLevel = this.respawnLevel;
                 this.health = this.maxHealth;
                 this.isInvulnerable = true;
-                this.invulnerabilityTimer = 2000; // 2 секунды неуязвимости после возрождения
+                this.invulnerabilityTimer = 2000;
             }
             
             setRespawnPoint(x, y, level) {
@@ -606,10 +583,8 @@
             }
             
             draw(ctx, camera, gameTime) {
-                // Цвет игрока зависит от уровня и неуязвимости
                 let playerColor = this.currentLevel === WORLD_LEVELS.SURFACE ? '#2ecc71' : '#3498db';
                 
-                // Мерцание при неуязвимости
                 if (this.isInvulnerable) {
                     const alpha = (Math.sin(Date.now() / 100) + 1) / 2;
                     playerColor = this.currentLevel === WORLD_LEVELS.SURFACE ? 
@@ -617,7 +592,6 @@
                         `rgba(52, 152, 219, ${alpha})`;
                 }
                 
-                // Рисуем игрока
                 ctx.fillStyle = playerColor;
                 ctx.fillRect(
                     this.x - camera.x, 
@@ -626,7 +600,6 @@
                     this.size
                 );
                 
-                // Контур игрока
                 ctx.strokeStyle = this.currentLevel === WORLD_LEVELS.SURFACE ? '#27ae60' : '#2980b9';
                 ctx.lineWidth = 2;
                 ctx.strokeRect(
@@ -636,7 +609,6 @@
                     this.size
                 );
                 
-                // Глаза игрока
                 ctx.fillStyle = '#fff';
                 ctx.fillRect(
                     this.x - camera.x + 6, 
@@ -651,7 +623,6 @@
                     4
                 );
                 
-                // Рисуем снаряды игрока
                 for (const projectile of this.projectiles) {
                     projectile.draw(ctx, camera);
                 }
@@ -663,21 +634,17 @@
                 const x = 20;
                 const y = 20;
                 
-                // Фон полоски здоровья
                 ctx.fillStyle = '#333';
                 ctx.fillRect(x, y, barWidth, barHeight);
                 
-                // Здоровье
                 const healthWidth = (this.health / this.maxHealth) * barWidth;
                 ctx.fillStyle = this.health > 50 ? '#2ecc71' : this.health > 20 ? '#f39c12' : '#e74c3c';
                 ctx.fillRect(x, y, healthWidth, barHeight);
                 
-                // Контур
                 ctx.strokeStyle = '#fff';
                 ctx.lineWidth = 1;
                 ctx.strokeRect(x, y, barWidth, barHeight);
                 
-                // Текст здоровья
                 ctx.fillStyle = '#fff';
                 ctx.font = '12px Courier New';
                 ctx.textAlign = 'center';
@@ -697,7 +664,6 @@
                 ctx.textAlign = 'left';
                 ctx.fillText(`Уровень: ${levelText}`, 25, 60);
                 
-                // Время суток
                 const timeText = gameTime.currentTime === TIME_OF_DAY.DAY ? "День" : "Ночь";
                 const timeColor = gameTime.currentTime === TIME_OF_DAY.DAY ? '#FFD700' : '#4169E1';
                 ctx.fillStyle = timeColor;
@@ -705,19 +671,14 @@
             }
             
             isPositionInDarkness(x, y, world, gameTime) {
-                // Днем на поверхности нет темноты
                 if (this.currentLevel === WORLD_LEVELS.SURFACE && gameTime.currentTime === TIME_OF_DAY.DAY) {
                     return false;
                 }
                 
-                // Проверяем, находится ли позиция в радиусе света факела
                 const tileX = Math.floor(x / TILE_SIZE);
                 const tileY = Math.floor(y / TILE_SIZE);
+                const torchLightRadius = 6;
                 
-                // Проверяем все факелы в мире
-                const torchLightRadius = 6; // Радиус света факела в тайлах
-                
-                // Проверяем факелы на поверхности
                 if (this.currentLevel === WORLD_LEVELS.SURFACE) {
                     for (let [key, itemType] of world.surfacePlacedTiles) {
                         if (itemType === ITEM_TYPES.TORCH) {
@@ -730,7 +691,6 @@
                     }
                 }
                 
-                // Проверяем факелы в пещере
                 if (this.currentLevel === WORLD_LEVELS.CAVE) {
                     for (let [key, itemType] of world.cavePlacedTiles) {
                         if (itemType === ITEM_TYPES.TORCH) {
@@ -743,7 +703,6 @@
                     }
                 }
                 
-                // Проверяем, находится ли позиция в радиусе видимости от игрока (только в пещере или ночью на поверхности)
                 const playerCenterX = this.x + this.size / 2;
                 const playerCenterY = this.y + this.size / 2;
                 const distance = Math.sqrt(
@@ -751,12 +710,10 @@
                     Math.pow(y - playerCenterY, 2)
                 );
                 
-                // Днем на поверхности игрок видит далеко
                 if (this.currentLevel === WORLD_LEVELS.SURFACE && gameTime.currentTime === TIME_OF_DAY.DAY) {
                     return distance > TILE_SIZE * 15;
                 }
                 
-                // Ночью на поверхности и в пещере видимость ограничена
                 return distance > TILE_SIZE * 5;
             }
         }
@@ -773,7 +730,6 @@
             }
             
             addItem(type, count = 1) {
-                // Пытаемся добавить в существующий слот
                 for (let slot of this.slots) {
                     if (slot.type === type && slot.count < 99) {
                         slot.count += count;
@@ -781,7 +737,6 @@
                     }
                 }
                 
-                // Ищем пустой слот
                 for (let slot of this.slots) {
                     if (slot.type === ITEM_TYPES.NONE) {
                         slot.type = type;
@@ -790,7 +745,7 @@
                     }
                 }
                 
-                return false; // Инвентарь полон
+                return false;
             }
             
             removeItem(type, count = 1) {
@@ -807,7 +762,7 @@
                         }
                     }
                 }
-                return false; // Недостаточно предметов
+                return false;
             }
             
             hasItems(type, count) {
@@ -840,39 +795,31 @@
                 const startX = (CANVAS_WIDTH - (this.slots.length * (slotSize + margin))) / 2;
                 const y = CANVAS_HEIGHT - slotSize - 20;
                 
-                // Фон инвентаря
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
                 ctx.fillRect(startX - 10, y - 10, 
                             this.slots.length * (slotSize + margin) + 20, 
                             slotSize + 20);
                 
-                // Слоты инвентаря
                 for (let i = 0; i < this.slots.length; i++) {
                     const slot = this.slots[i];
                     const x = startX + i * (slotSize + margin);
                     
-                    // Фон слота
                     ctx.fillStyle = '#333';
                     ctx.fillRect(x, y, slotSize, slotSize);
                     
-                    // Контур слота
                     ctx.strokeStyle = i === game.player.selectedSlot ? '#4af' : '#666';
                     ctx.lineWidth = i === game.player.selectedSlot ? 3 : 1;
                     ctx.strokeRect(x, y, slotSize, slotSize);
                     
-                    // Если слот не пустой
                     if (slot.type !== ITEM_TYPES.NONE) {
-                        // Предмет
                         ctx.fillStyle = ITEM_COLORS[slot.type];
                         ctx.fillRect(x + 6, y + 6, slotSize - 12, slotSize - 12);
                         
-                        // Количество
                         ctx.fillStyle = '#fff';
                         ctx.font = 'bold 12px Courier New';
                         ctx.textAlign = 'right';
                         ctx.fillText(slot.count, x + slotSize - 5, y + slotSize - 5);
                         
-                        // Название предмета (при наведении)
                         if (game.mouse.x >= x && game.mouse.x <= x + slotSize && 
                             game.mouse.y >= y && game.mouse.y <= y + slotSize) {
                             ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
@@ -884,7 +831,6 @@
                         }
                     }
                     
-                    // Номер слота
                     ctx.fillStyle = '#aaa';
                     ctx.font = '10px Courier New';
                     ctx.textAlign = 'left';
@@ -898,18 +844,14 @@
         // ============================
         class World {
             constructor() {
-                // Поверхность
                 this.surfaceTiles = [];
-                this.surfacePlacedTiles = new Map(); // Построенные тайлы: ключ -> тип
-                this.originalSurfaceTiles = []; // Оригинальные тайлы для восстановления деревьев
-                // Пещера
+                this.surfacePlacedTiles = new Map();
+                this.originalSurfaceTiles = [];
                 this.caveTiles = [];
                 this.cavePlacedTiles = new Map();
                 
                 this.generateSurface();
                 this.generateCave();
-                
-                // Сохраняем оригинальные тайлы поверхности для восстановления деревьев
                 this.saveOriginalSurface();
             }
             
@@ -923,19 +865,16 @@
             }
             
             growTrees() {
-                // Восстанавливаем случайные деревья на траве
                 let treesGrown = 0;
-                const maxTreesToGrow = 10; // Максимальное количество деревьев за цикл роста
+                const maxTreesToGrow = 10;
                 
-                for (let i = 0; i < 50; i++) { // Проверяем 50 случайных позиций
+                for (let i = 0; i < 50; i++) {
                     const x = Math.floor(Math.random() * WORLD_WIDTH);
                     const y = Math.floor(Math.random() * WORLD_HEIGHT);
                     
-                    // Если на этой позиции была трава и сейчас трава, и не вода
                     if (this.originalSurfaceTiles[y][x] === TILE_TYPES.TREE && 
                         this.surfaceTiles[y][x] === TILE_TYPES.GRASS) {
                         
-                        // Проверяем, что рядом нет других деревьев (чтобы не было скученности)
                         let hasNearbyTree = false;
                         for (let dy = -2; dy <= 2; dy++) {
                             for (let dx = -2; dx <= 2; dx++) {
@@ -966,7 +905,6 @@
             }
             
             generateSurface() {
-                // Инициализация пустой поверхности
                 for (let y = 0; y < WORLD_HEIGHT; y++) {
                     this.surfaceTiles[y] = [];
                     for (let x = 0; x < WORLD_WIDTH; x++) {
@@ -974,7 +912,6 @@
                     }
                 }
                 
-                // Создаем водоемы
                 for (let i = 0; i < 6; i++) {
                     const waterX = Math.floor(Math.random() * (WORLD_WIDTH - 10)) + 5;
                     const waterY = Math.floor(Math.random() * (WORLD_HEIGHT - 8)) + 4;
@@ -992,7 +929,6 @@
                     }
                 }
                 
-                // Размещаем камни
                 for (let i = 0; i < 30; i++) {
                     const x = Math.floor(Math.random() * WORLD_WIDTH);
                     const y = Math.floor(Math.random() * WORLD_HEIGHT);
@@ -1001,7 +937,6 @@
                     }
                 }
                 
-                // Размещаем деревья
                 for (let i = 0; i < 25; i++) {
                     const x = Math.floor(Math.random() * WORLD_WIDTH);
                     const y = Math.floor(Math.random() * WORLD_HEIGHT);
@@ -1010,7 +945,6 @@
                     }
                 }
                 
-                // Гарантируем стартовую позицию без препятствий
                 const startX = Math.floor(WORLD_WIDTH / 2);
                 const startY = Math.floor(WORLD_HEIGHT / 2);
                 for (let y = startY - 3; y <= startY + 3; y++) {
@@ -1023,7 +957,6 @@
             }
             
             generateCave() {
-                // Инициализация пещеры (все стены)
                 for (let y = 0; y < WORLD_HEIGHT; y++) {
                     this.caveTiles[y] = [];
                     for (let x = 0; x < WORLD_WIDTH; x++) {
@@ -1031,7 +964,6 @@
                     }
                 }
                 
-                // Создаем центральную комнату (5x5 блоков)
                 const centerX = Math.floor(WORLD_WIDTH / 2);
                 const centerY = Math.floor(WORLD_HEIGHT / 2);
                 const roomSize = 5;
@@ -1044,13 +976,9 @@
                     }
                 }
                 
-                // Лестница на поверхность в центре комнаты
                 this.caveTiles[centerY][centerX] = CAVE_TILE_TYPES.CAVE_EXIT;
-                
-                // Создаем туннели от комнаты
                 this.createCaveTunnels(centerX, centerY, roomSize);
                 
-                // Размещаем железную руду в пещере
                 for (let i = 0; i < 15; i++) {
                     let x, y;
                     do {
@@ -1061,7 +989,6 @@
                     this.caveTiles[y][x] = CAVE_TILE_TYPES.IRON_ORE;
                 }
                 
-                // Размещаем уголь в пещере
                 for (let i = 0; i < 20; i++) {
                     let x, y;
                     do {
@@ -1072,12 +999,10 @@
                     this.caveTiles[y][x] = CAVE_TILE_TYPES.COAL_ORE;
                 }
                 
-                // Добавляем немного случайных полов в пещере для разнообразия
                 for (let i = 0; i < 50; i++) {
                     const x = Math.floor(Math.random() * WORLD_WIDTH);
                     const y = Math.floor(Math.random() * WORLD_HEIGHT);
                     if (this.caveTiles[y][x] === CAVE_TILE_TYPES.CAVE_WALL) {
-                        // Проверяем соседей
                         let floorNeighbors = 0;
                         for (let dy = -1; dy <= 1; dy++) {
                             for (let dx = -1; dx <= 1; dx++) {
@@ -1098,12 +1023,11 @@
             }
             
             createCaveTunnels(startX, startY, radius) {
-                // Создаем 4 туннеля из центральной комнаты
                 const directions = [
-                    {dx: 1, dy: 0, length: 10},   // Вправо
-                    {dx: -1, dy: 0, length: 10},  // Влево
-                    {dx: 0, dy: 1, length: 8},    // Вниз
-                    {dx: 0, dy: -1, length: 8}    // Вверх
+                    {dx: 1, dy: 0, length: 10},
+                    {dx: -1, dy: 0, length: 10},
+                    {dx: 0, dy: 1, length: 8},
+                    {dx: 0, dy: -1, length: 8}
                 ];
                 
                 for (let dir of directions) {
@@ -1125,7 +1049,6 @@
                         x += dir.dx;
                         y += dir.dy;
                         
-                        // Останавливаемся, если вышли за границы мира
                         if (x < 0 || x >= WORLD_WIDTH || y < 0 || y >= WORLD_HEIGHT) {
                             break;
                         }
@@ -1151,14 +1074,11 @@
                 const tileType = this.getTileAt(x, y, level);
                 
                 if (level === WORLD_LEVELS.SURFACE) {
-                    // На поверхности нужна лопата для травы (создание шахты)
                     if (toolType === ITEM_TYPES.SHOVEL && tileType === TILE_TYPES.GRASS) {
                         return true;
                     }
-                    // Дерево и камень можно собирать без инструмента
                     return tileType === TILE_TYPES.STONE || tileType === TILE_TYPES.TREE;
                 } else if (level === WORLD_LEVELS.CAVE) {
-                    // В пещере нужна кирка для добычи руды
                     if (toolType === ITEM_TYPES.PICKAXE || toolType === ITEM_TYPES.IMPROVED_PICKAXE) {
                         return tileType === CAVE_TILE_TYPES.IRON_ORE || 
                                tileType === CAVE_TILE_TYPES.COAL_ORE ||
@@ -1178,8 +1098,7 @@
                         const tileType = this.surfaceTiles[tileY][tileX];
                         
                         if (toolType === ITEM_TYPES.SHOVEL && tileType === TILE_TYPES.GRASS) {
-                            // Создаем шахту вместо сбора ресурса
-                            return null; // Возвращаем null, чтобы показать, что это особое действие
+                            return null;
                         } else if (tileType === TILE_TYPES.STONE) {
                             this.surfaceTiles[tileY][tileX] = TILE_TYPES.GRASS;
                             return ITEM_TYPES.STONE;
@@ -1214,13 +1133,11 @@
                 
                 if (tileX >= 0 && tileX < WORLD_WIDTH && tileY >= 0 && tileY < WORLD_HEIGHT) {
                     if (level === WORLD_LEVELS.SURFACE) {
-                        // Проверяем, что место свободно (не вода и не другое здание)
                         if (this.surfaceTiles[tileY][tileX] !== TILE_TYPES.WATER && !this.surfacePlacedTiles.has(key)) {
                             this.surfacePlacedTiles.set(key, itemType);
                             return true;
                         }
                     } else if (level === WORLD_LEVELS.CAVE) {
-                        // В пещере можно строить только на полу
                         if (this.caveTiles[tileY][tileX] === CAVE_TILE_TYPES.CAVE_FLOOR && !this.cavePlacedTiles.has(key)) {
                             this.cavePlacedTiles.set(key, itemType);
                             return true;
@@ -1248,7 +1165,6 @@
                 const tileX = Math.floor(x / TILE_SIZE);
                 const tileY = Math.floor(y / TILE_SIZE);
                 
-                // Проверяем все соседние тайлы
                 for (let dy = -1; dy <= 1; dy++) {
                     for (let dx = -1; dx <= 1; dx++) {
                         const nx = tileX + dx;
@@ -1263,7 +1179,6 @@
                             if (this.cavePlacedTiles.has(key) && this.cavePlacedTiles.get(key) === ITEM_TYPES.LADDER) {
                                 return true;
                             }
-                            // Также проверяем лестницу на поверхность (фиксированную)
                             if (this.caveTiles[ny] && this.caveTiles[ny][nx] === CAVE_TILE_TYPES.CAVE_EXIT) {
                                 return true;
                             }
@@ -1277,7 +1192,6 @@
                 const tileX = Math.floor(x / TILE_SIZE);
                 const tileY = Math.floor(y / TILE_SIZE);
                 
-                // Проверяем все соседние тайлы
                 for (let dy = -1; dy <= 1; dy++) {
                     for (let dx = -1; dx <= 1; dx++) {
                         const nx = tileX + dx;
@@ -1301,7 +1215,7 @@
             isPositionNearTorch(x, y, level) {
                 const tileX = Math.floor(x / TILE_SIZE);
                 const tileY = Math.floor(y / TILE_SIZE);
-                const torchRadius = 8; // Радиус, в котором мобы не спавнятся
+                const torchRadius = 8;
                 
                 if (level === WORLD_LEVELS.SURFACE) {
                     for (let [key, itemType] of this.surfacePlacedTiles) {
@@ -1328,7 +1242,6 @@
                 return false;
             }
             
-            // Метод для разрушения алтаря улучшенной киркой
             breakAltar(x, y, level) {
                 const tileX = Math.floor(x / TILE_SIZE);
                 const tileY = Math.floor(y / TILE_SIZE);
@@ -1354,13 +1267,11 @@
                 return ITEM_TYPES.NONE;
             }
             
-            // Метод для копания 3 тайлов улучшенной киркой
             digArea(x, y, level) {
                 const tileX = Math.floor(x / TILE_SIZE);
                 const tileY = Math.floor(y / TILE_SIZE);
                 const minedItems = [];
                 
-                // Копаем область 3x3
                 for (let dy = -1; dy <= 1; dy++) {
                     for (let dx = -1; dx <= 1; dx++) {
                         const nx = tileX + dx;
@@ -1388,78 +1299,56 @@
             }
             
             draw(ctx, camera, level, gameTime) {
-                // Определяем видимую область
                 const startX = Math.max(0, Math.floor(camera.x / TILE_SIZE));
                 const endX = Math.min(WORLD_WIDTH, Math.ceil((camera.x + CANVAS_WIDTH) / TILE_SIZE));
                 const startY = Math.max(0, Math.floor(camera.y / TILE_SIZE));
                 const endY = Math.min(WORLD_HEIGHT, Math.ceil((camera.y + CANVAS_HEIGHT) / TILE_SIZE));
                 
                 if (level === WORLD_LEVELS.SURFACE) {
-                    // Затемнение для ночи
-                    if (gameTime.currentTime === TIME_OF_DAY.NIGHT) {
-                        ctx.fillStyle = 'rgba(0, 0, 10, 0.7)';
+                    // Плавное затемнение для ночи
+                    const darkness = gameTime.darknessFactor;
+                    if (darkness > 0) {
+                        ctx.fillStyle = `rgba(0, 0, 10, ${0.7 * darkness})`;
                         ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                     }
                     
-                    // Рисуем тайлы поверхности
                     for (let y = startY; y < endY; y++) {
                         for (let x = startX; x < endX; x++) {
                             const tileType = this.surfaceTiles[y][x];
                             const drawX = x * TILE_SIZE - camera.x;
                             const drawY = y * TILE_SIZE - camera.y;
                             
-                            // Рисуем фон тайла
                             switch (tileType) {
                                 case TILE_TYPES.GRASS:
-                                    // Трава меняет цвет в зависимости от времени суток
-                                    if (gameTime.currentTime === TIME_OF_DAY.DAY) {
-                                        ctx.fillStyle = '#2d5a27';
-                                    } else {
-                                        ctx.fillStyle = '#1a3a1a';
-                                    }
+                                    const grassDarkness = darkness * 0.3;
+                                    ctx.fillStyle = this.interpolateColor('#2d5a27', '#1a3a1a', grassDarkness);
                                     break;
                                 case TILE_TYPES.WATER:
-                                    // Вода темнее ночью
-                                    if (gameTime.currentTime === TIME_OF_DAY.DAY) {
-                                        ctx.fillStyle = '#1a3a6e';
-                                    } else {
-                                        ctx.fillStyle = '#0a1a3e';
-                                    }
+                                    const waterDarkness = darkness * 0.4;
+                                    ctx.fillStyle = this.interpolateColor('#1a3a6e', '#0a1a3e', waterDarkness);
                                     break;
                                 case TILE_TYPES.STONE:
                                     ctx.fillStyle = '#555';
                                     break;
                                 case TILE_TYPES.TREE:
-                                    // Деревья темнее ночью
-                                    if (gameTime.currentTime === TIME_OF_DAY.DAY) {
-                                        ctx.fillStyle = '#2d5a27';
-                                    } else {
-                                        ctx.fillStyle = '#1a3a1a';
-                                    }
+                                    const treeDarkness = darkness * 0.3;
+                                    ctx.fillStyle = this.interpolateColor('#2d5a27', '#1a3a1a', treeDarkness);
                                     break;
                             }
                             
-                            // Если позиция в темноте, делаем ее еще темнее
                             const worldX = x * TILE_SIZE + TILE_SIZE/2;
                             const worldY = y * TILE_SIZE + TILE_SIZE/2;
                             if (game.player.isPositionInDarkness(worldX, worldY, this, gameTime)) {
-                                // Затемняем тайл
                                 ctx.fillStyle = this.darkenColor(ctx.fillStyle, 0.6);
                             }
                             
                             ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
                             
-                            // Детали тайлов
                             switch (tileType) {
                                 case TILE_TYPES.GRASS:
-                                    // Трава
-                                    if (gameTime.currentTime === TIME_OF_DAY.DAY) {
-                                        ctx.fillStyle = '#3a6a32';
-                                    } else {
-                                        ctx.fillStyle = '#2a4a22';
-                                    }
+                                    const grassDetailDarkness = darkness * 0.2;
+                                    ctx.fillStyle = this.interpolateColor('#3a6a32', '#2a4a22', grassDetailDarkness);
                                     
-                                    // Если позиция в темноте, не рисуем детали
                                     if (!game.player.isPositionInDarkness(worldX, worldY, this, gameTime)) {
                                         for (let i = 0; i < 5; i++) {
                                             const px = drawX + Math.random() * TILE_SIZE;
@@ -1470,14 +1359,9 @@
                                     break;
                                     
                                 case TILE_TYPES.WATER:
-                                    // Волны на воду
-                                    if (gameTime.currentTime === TIME_OF_DAY.DAY) {
-                                        ctx.fillStyle = '#2a4a8e';
-                                    } else {
-                                        ctx.fillStyle = '#1a2a6e';
-                                    }
+                                    const waterDetailDarkness = darkness * 0.3;
+                                    ctx.fillStyle = this.interpolateColor('#2a4a8e', '#1a2a6e', waterDetailDarkness);
                                     
-                                    // Если позиция в темноте, не рисуем детали
                                     if (!game.player.isPositionInDarkness(worldX, worldY, this, gameTime)) {
                                         for (let i = 0; i < 3; i++) {
                                             const px = drawX + Math.random() * TILE_SIZE;
@@ -1488,8 +1372,6 @@
                                     break;
                                     
                                 case TILE_TYPES.STONE:
-                                    // Камень
-                                    // Если позиция в темноте, не рисуем детали
                                     if (!game.player.isPositionInDarkness(worldX, worldY, this, gameTime)) {
                                         ctx.fillStyle = '#777';
                                         ctx.fillRect(drawX + 4, drawY + 4, TILE_SIZE - 8, TILE_SIZE - 8);
@@ -1499,20 +1381,13 @@
                                     break;
                                     
                                 case TILE_TYPES.TREE:
-                                    // Дерево (ствол)
                                     if (!game.player.isPositionInDarkness(worldX, worldY, this, gameTime)) {
-                                        if (gameTime.currentTime === TIME_OF_DAY.DAY) {
-                                            ctx.fillStyle = '#8B4513';
-                                        } else {
-                                            ctx.fillStyle = '#5a2d0b';
-                                        }
+                                        const trunkDarkness = darkness * 0.2;
+                                        ctx.fillStyle = this.interpolateColor('#8B4513', '#5a2d0b', trunkDarkness);
                                         ctx.fillRect(drawX + 12, drawY + 16, 8, 16);
-                                        // Крона
-                                        if (gameTime.currentTime === TIME_OF_DAY.DAY) {
-                                            ctx.fillStyle = '#2e7d32';
-                                        } else {
-                                            ctx.fillStyle = '#1e5d22';
-                                        }
+                                        
+                                        const leavesDarkness = darkness * 0.3;
+                                        ctx.fillStyle = this.interpolateColor('#2e7d32', '#1e5d22', leavesDarkness);
                                         ctx.beginPath();
                                         ctx.arc(drawX + 16, drawY + 12, 10, 0, Math.PI * 2);
                                         ctx.fill();
@@ -1522,7 +1397,6 @@
                         }
                     }
                     
-                    // Рисуем построенные игроком тайлы на поверхности
                     for (let [key, itemType] of this.surfacePlacedTiles) {
                         const [x, y] = key.split(',').map(Number);
                         const drawX = x * TILE_SIZE - camera.x;
@@ -1530,21 +1404,17 @@
                         const worldX = x * TILE_SIZE + TILE_SIZE/2;
                         const worldY = y * TILE_SIZE + TILE_SIZE/2;
                         
-                        // Если позиция в темноте, пропускаем отрисовку
                         if (!game.player.isPositionInDarkness(worldX, worldY, this, gameTime)) {
                             this.drawPlacedTile(ctx, drawX, drawY, itemType, gameTime);
                         }
                     }
                     
-                    // Рисуем свет факелов
                     this.drawTorchLight(ctx, camera, level, gameTime);
                 } else if (level === WORLD_LEVELS.CAVE) {
-                    // Темный фон для пещеры
                     ctx.fillStyle = '#000';
                     ctx.fillRect(startX * TILE_SIZE - camera.x, startY * TILE_SIZE - camera.y, 
                                 (endX - startX) * TILE_SIZE, (endY - startY) * TILE_SIZE);
                     
-                    // Рисуем тайлы пещеры
                     for (let y = startY; y < endY; y++) {
                         for (let x = startX; x < endX; x++) {
                             const tileType = this.caveTiles[y][x];
@@ -1553,15 +1423,12 @@
                             const worldX = x * TILE_SIZE;
                             const worldY = y * TILE_SIZE;
                             
-                            // Рисуем только если тайл в радиусе видимости от игрока или факела
                             if (!game.player.isPositionInDarkness(worldX + TILE_SIZE/2, worldY + TILE_SIZE/2, this, gameTime)) {
-                                // Рисуем тайлы пещеры
                                 switch (tileType) {
                                     case CAVE_TILE_TYPES.CAVE_WALL:
                                         ctx.fillStyle = '#333';
                                         ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
                                         
-                                        // Текстура стены
                                         ctx.fillStyle = '#222';
                                         for (let i = 0; i < 4; i++) {
                                             ctx.fillRect(drawX + 2 + i * 7, drawY + 2, 3, TILE_SIZE - 4);
@@ -1572,7 +1439,6 @@
                                         ctx.fillStyle = '#222';
                                         ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
                                         
-                                        // Текстура пола
                                         ctx.fillStyle = '#2a2a2a';
                                         for (let i = 0; i < 3; i++) {
                                             for (let j = 0; j < 3; j++) {
@@ -1585,11 +1451,9 @@
                                         ctx.fillStyle = '#222';
                                         ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
                                         
-                                        // Железная руда
                                         ctx.fillStyle = '#B22222';
                                         ctx.fillRect(drawX + 4, drawY + 4, TILE_SIZE - 8, TILE_SIZE - 8);
                                         
-                                        // Блеск руды
                                         ctx.fillStyle = '#FF6347';
                                         ctx.fillRect(drawX + 8, drawY + 8, 4, 4);
                                         ctx.fillRect(drawX + 20, drawY + 20, 3, 3);
@@ -1599,11 +1463,9 @@
                                         ctx.fillStyle = '#222';
                                         ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
                                         
-                                        // Уголь
                                         ctx.fillStyle = '#2F4F4F';
                                         ctx.fillRect(drawX + 4, drawY + 4, TILE_SIZE - 8, TILE_SIZE - 8);
                                         
-                                        // Детали угля
                                         ctx.fillStyle = '#000';
                                         for (let i = 0; i < 5; i++) {
                                             ctx.fillRect(drawX + 6 + i * 5, drawY + 12, 3, 8);
@@ -1614,7 +1476,6 @@
                                         ctx.fillStyle = '#222';
                                         ctx.fillRect(drawX, drawY, TILE_SIZE, TILE_SIZE);
                                         
-                                        // Лестница на поверхность
                                         ctx.fillStyle = '#D2B48C';
                                         for (let i = 0; i < 3; i++) {
                                             ctx.fillRect(drawX + 4, drawY + 8 + i * 8, TILE_SIZE - 8, 3);
@@ -1627,7 +1488,6 @@
                         }
                     }
                     
-                    // Рисуем построенные игроком тайлы в пещере (только если в радиусе видимости)
                     for (let [key, itemType] of this.cavePlacedTiles) {
                         const [x, y] = key.split(',').map(Number);
                         const drawX = x * TILE_SIZE - camera.x;
@@ -1640,13 +1500,33 @@
                         }
                     }
                     
-                    // Рисуем свет факелов
                     this.drawTorchLight(ctx, camera, level, gameTime);
                 }
             }
             
+            interpolateColor(color1, color2, factor) {
+                const hex = color => {
+                    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(color);
+                    return result ? {
+                        r: parseInt(result[1], 16),
+                        g: parseInt(result[2], 16),
+                        b: parseInt(result[3], 16)
+                    } : null;
+                };
+                
+                const rgb1 = hex(color1);
+                const rgb2 = hex(color2);
+                
+                if (!rgb1 || !rgb2) return color1;
+                
+                const r = Math.round(rgb1.r + (rgb2.r - rgb1.r) * factor);
+                const g = Math.round(rgb1.g + (rgb2.g - rgb1.g) * factor);
+                const b = Math.round(rgb1.b + (rgb2.b - rgb1.b) * factor);
+                
+                return `rgb(${r}, ${g}, ${b})`;
+            }
+            
             darkenColor(color, factor) {
-                // Извлекаем компоненты цвета
                 const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
                 if (match) {
                     let r = parseInt(match[1]);
@@ -1654,7 +1534,6 @@
                     let b = parseInt(match[3]);
                     let a = match[4] ? parseFloat(match[4]) : 1;
                     
-                    // Затемняем цвет
                     r = Math.floor(r * factor);
                     g = Math.floor(g * factor);
                     b = Math.floor(b * factor);
@@ -1668,13 +1547,11 @@
             drawPlacedTile(ctx, x, y, itemType, gameTime) {
                 switch (itemType) {
                     case ITEM_TYPES.WALL:
-                        // Стена
                         ctx.fillStyle = '#696969';
                         ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
                         ctx.fillStyle = '#555';
                         ctx.fillRect(x + 4, y + 4, TILE_SIZE - 8, TILE_SIZE - 8);
                         
-                        // Текстура стены
                         ctx.fillStyle = '#444';
                         for (let i = 0; i < 4; i++) {
                             ctx.fillRect(x + 6 + i * 6, y + 8, 2, TILE_SIZE - 12);
@@ -1682,13 +1559,11 @@
                         break;
                         
                     case ITEM_TYPES.ALTAR:
-                        // Алтарь
                         ctx.fillStyle = '#800080';
                         ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
                         ctx.fillStyle = '#4B0082';
                         ctx.fillRect(x + 4, y + 4, TILE_SIZE - 8, TILE_SIZE - 8);
                         
-                        // Символ на алтаре
                         ctx.fillStyle = '#FFD700';
                         ctx.beginPath();
                         ctx.arc(x + TILE_SIZE/2, y + TILE_SIZE/2, 8, 0, Math.PI * 2);
@@ -1701,15 +1576,12 @@
                         break;
                         
                     case ITEM_TYPES.MINE_SHAFT:
-                        // Шахта
                         ctx.fillStyle = '#654321';
                         ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
                         
-                        // Вход в шахту
                         ctx.fillStyle = '#222';
                         ctx.fillRect(x + 8, y + 8, TILE_SIZE - 16, TILE_SIZE - 16);
                         
-                        // Лестница в шахте
                         ctx.fillStyle = '#D2B48C';
                         for (let i = 0; i < 3; i++) {
                             ctx.fillRect(x + 6, y + 6 + i * 8, TILE_SIZE - 12, 3);
@@ -1717,17 +1589,14 @@
                         break;
                         
                     case ITEM_TYPES.FURNACE:
-                        // Печка
                         ctx.fillStyle = '#8B0000';
                         ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
                         ctx.fillStyle = '#A52A2A';
                         ctx.fillRect(x + 4, y + 4, TILE_SIZE - 8, TILE_SIZE - 8);
                         
-                        // Отверстие печки
                         ctx.fillStyle = '#222';
                         ctx.fillRect(x + 10, y + 10, TILE_SIZE - 20, TILE_SIZE - 20);
                         
-                        // Огонь (если есть уголь)
                         if (Math.random() > 0.7) {
                             ctx.fillStyle = '#FF4500';
                             ctx.fillRect(x + 12, y + 20, TILE_SIZE - 24, 4);
@@ -1735,7 +1604,6 @@
                         break;
                         
                     case ITEM_TYPES.LADDER:
-                        // Лестница
                         ctx.fillStyle = '#222';
                         ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
                         
@@ -1748,11 +1616,9 @@
                         break;
                         
                     case ITEM_TYPES.TORCH:
-                        // Факел
                         ctx.fillStyle = '#8B4513';
                         ctx.fillRect(x + 14, y + 20, 4, 12);
                         
-                        // Пламя факла
                         const flameSize = 6 + Math.sin(Date.now() / 200) * 2;
                         ctx.fillStyle = '#FF4500';
                         ctx.beginPath();
@@ -1763,18 +1629,14 @@
                         ctx.beginPath();
                         ctx.arc(x + TILE_SIZE/2, y + 18, flameSize * 0.6, 0, Math.PI * 2);
                         ctx.fill();
-                        
-                        // Свет факла (рисуется отдельно в drawTorchLight)
                         break;
                         
                     case ITEM_TYPES.RESURRECTION_ALTAR:
-                        // Алтарь возрождения
                         ctx.fillStyle = '#00FF00';
                         ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
                         ctx.fillStyle = '#008800';
                         ctx.fillRect(x + 4, y + 4, TILE_SIZE - 8, TILE_SIZE - 8);
                         
-                        // Символ возрождения
                         ctx.fillStyle = '#FFFFFF';
                         ctx.beginPath();
                         ctx.arc(x + TILE_SIZE/2, y + TILE_SIZE/2, 8, 0, Math.PI * 2);
@@ -1785,7 +1647,6 @@
                         ctx.arc(x + TILE_SIZE/2, y + TILE_SIZE/2, 4, 0, Math.PI * 2);
                         ctx.fill();
                         
-                        // Крест (символ возрождения)
                         ctx.fillStyle = '#008800';
                         ctx.fillRect(x + TILE_SIZE/2 - 1, y + 10, 2, 12);
                         ctx.fillRect(x + 10, y + TILE_SIZE/2 - 1, 12, 2);
@@ -1794,7 +1655,6 @@
             }
             
             drawTorchLight(ctx, camera, level, gameTime) {
-                // Собираем все факелы на текущем уровне
                 let torches = [];
                 
                 if (level === WORLD_LEVELS.SURFACE) {
@@ -1813,11 +1673,10 @@
                     }
                 }
                 
-                // Рисуем свет для каждого факела
                 for (let torch of torches) {
                     const centerX = torch.x - camera.x;
                     const centerY = torch.y - camera.y;
-                    const radius = TILE_SIZE * 6; // Радиус света факела
+                    const radius = TILE_SIZE * 6;
                     
                     const gradient = ctx.createRadialGradient(
                         centerX, centerY, radius * 0.1,
@@ -1825,12 +1684,10 @@
                     );
                     
                     if (level === WORLD_LEVELS.SURFACE && gameTime.currentTime === TIME_OF_DAY.DAY) {
-                        // Днем свет факела менее заметен
                         gradient.addColorStop(0, 'rgba(255, 215, 0, 0.3)');
                         gradient.addColorStop(0.7, 'rgba(255, 165, 0, 0.1)');
                         gradient.addColorStop(1, 'rgba(255, 140, 0, 0)');
                     } else {
-                        // Ночью и в пещере свет ярче
                         gradient.addColorStop(0, 'rgba(255, 215, 0, 0.5)');
                         gradient.addColorStop(0.7, 'rgba(255, 165, 0, 0.2)');
                         gradient.addColorStop(1, 'rgba(255, 140, 0, 0)');
@@ -1851,12 +1708,11 @@
             constructor(x, y, targetX, targetY, damage, speed = PROJECTILE_SPEED, color = '#ff4444', size = PROJECTILE_SIZE) {
                 this.x = x;
                 this.y = y;
-                this.size = size; // Используем переданный размер
+                this.size = size;
                 this.damage = damage;
                 this.speed = speed;
                 this.color = color;
                 
-                // Вычисляем направление к цели
                 const dx = targetX - x;
                 const dy = targetY - y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
@@ -1873,7 +1729,6 @@
                 this.x += this.velocityX;
                 this.y += this.velocityY;
                 
-                // Проверяем выход за границы мира
                 if (this.x < 0 || this.x > WORLD_WIDTH * TILE_SIZE || 
                     this.y < 0 || this.y > WORLD_HEIGHT * TILE_SIZE) {
                     this.active = false;
@@ -1897,7 +1752,6 @@
             draw(ctx, camera) {
                 if (!this.active) return;
                 
-                // Основной цвет снаряда
                 ctx.fillStyle = this.color;
                 ctx.beginPath();
                 ctx.arc(
@@ -1909,7 +1763,6 @@
                 );
                 ctx.fill();
                 
-                // Яркое ядро
                 ctx.fillStyle = '#ffffff';
                 ctx.beginPath();
                 ctx.arc(
@@ -1921,7 +1774,6 @@
                 );
                 ctx.fill();
                 
-                // Свечение
                 ctx.strokeStyle = this.color;
                 ctx.lineWidth = 2;
                 ctx.beginPath();
@@ -1944,12 +1796,12 @@
                 this.x = x;
                 this.y = y;
                 this.size = BOSS_SIZE;
-                this.health = 150;
-                this.maxHealth = 150;
+                this.health = 200; // Увеличенное здоровье
+                this.maxHealth = 200;
                 this.speed = 1.5;
                 this.damage = 15;
                 this.lastAttackTime = 0;
-                this.attackCooldown = 1000; // мс
+                this.attackCooldown = 1000;
                 this.alive = true;
                 this.isCaveBoss = false;
             }
@@ -1957,7 +1809,6 @@
             update(player, deltaTime) {
                 if (!this.alive) return;
                 
-                // Движение к игроку
                 const dx = player.x - this.x;
                 const dy = player.y - this.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
@@ -1967,12 +1818,10 @@
                     this.y += (dy / distance) * this.speed;
                 }
                 
-                // Обновление времени перезарядки атаки
                 if (this.lastAttackTime > 0) {
                     this.lastAttackTime -= deltaTime;
                 }
                 
-                // Проверка столкновения с игроком
                 if (this.checkCollision(player) && this.lastAttackTime <= 0) {
                     player.takeDamage(this.damage);
                     this.lastAttackTime = this.attackCooldown;
@@ -1992,9 +1841,7 @@
                     this.health = 0;
                     this.alive = false;
                     
-                    // Дроп улучшенной кирки с первого босса
-                    if (!this.isCaveBoss && Math.random() < 1.0) { // 100% шанс
-                        // Добавляем улучшенную кирку в инвентарь игрока
+                    if (!this.isCaveBoss && Math.random() < 1.0) {
                         if (game.player.inventory.addItem(ITEM_TYPES.IMPROVED_PICKAXE, 1)) {
                             game.showStatus('Получена: Улучшенная кирка! ЛКМ: ломает алтари и копает 3 тайла.');
                         }
@@ -2005,7 +1852,7 @@
             draw(ctx, camera) {
                 if (!this.alive) return;
                 
-                // Тело босса (большой красный круг)
+                // Тело босса
                 ctx.fillStyle = '#c0392b';
                 ctx.beginPath();
                 ctx.arc(
@@ -2017,7 +1864,7 @@
                 );
                 ctx.fill();
                 
-                // Глаза босса (желтые круги)
+                // Глаза
                 ctx.fillStyle = '#f1c40f';
                 ctx.beginPath();
                 ctx.arc(
@@ -2073,6 +1920,27 @@
                     Math.PI
                 );
                 ctx.stroke();
+                
+                // Полоска здоровья босса
+                this.drawHealthBar(ctx, camera);
+            }
+            
+            drawHealthBar(ctx, camera) {
+                const barWidth = this.size;
+                const barHeight = 8;
+                const barX = this.x - camera.x - barWidth / 2;
+                const barY = this.y - camera.y - this.size / 2 - 15;
+
+                ctx.fillStyle = '#333';
+                ctx.fillRect(barX, barY, barWidth, barHeight);
+
+                const healthWidth = (this.health / this.maxHealth) * barWidth;
+                ctx.fillStyle = this.health > 50 ? '#2ecc71' : this.health > 20 ? '#f39c12' : '#e74c3c';
+                ctx.fillRect(barX, barY, healthWidth, barHeight);
+
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(barX, barY, barWidth, barHeight);
             }
         }
         
@@ -2083,65 +1951,56 @@
             constructor(x, y) {
                 super(x, y);
                 this.size = CAVE_BOSS_SIZE;
-                this.health = 250;
-                this.maxHealth = 250;
+                this.health = 300; // Увеличенное здоровье
+                this.maxHealth = 300;
                 this.speed = 1.2;
                 this.damage = 20;
                 this.projectiles = [];
                 this.lastProjectileTime = 0;
-                this.projectileCooldown = 2000; // мс
-                this.projectileDamage = 15; // Увеличен урон с 10 до 15
+                this.projectileCooldown = 2000;
+                this.projectileDamage = 25; // Увеличенный урон
                 this.isCaveBoss = true;
             }
             
             update(player, deltaTime) {
                 if (!this.alive) return;
                 
-                // Движение к игроку (медленнее, чем обычный босс)
                 const dx = player.x - this.x;
                 const dy = player.y - this.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 
-                // Двигаемся только если игрок достаточно далеко
                 if (distance > 100) {
                     this.x += (dx / distance) * this.speed;
                     this.y += (dy / distance) * this.speed;
                 }
                 
-                // Обновление времени перезарядки атаки
                 if (this.lastAttackTime > 0) {
                     this.lastAttackTime -= deltaTime;
                 }
                 
-                // Обновление времени перезарядки снарядов
                 if (this.lastProjectileTime > 0) {
                     this.lastProjectileTime -= deltaTime;
                 }
                 
-                // Проверка столкновения с игроком
                 if (this.checkCollision(player) && this.lastAttackTime <= 0) {
                     player.takeDamage(this.damage);
                     this.lastAttackTime = this.attackCooldown;
                 }
                 
-                // Стрельба снарядами
                 if (this.lastProjectileTime <= 0 && distance < 400) {
                     this.shootProjectile(player);
                     this.lastProjectileTime = this.projectileCooldown;
                 }
                 
-                // Обновление снарядов
                 for (let i = this.projectiles.length - 1; i >= 0; i--) {
                     const projectile = this.projectiles[i];
                     projectile.update(deltaTime);
                     
-                    // Проверка столкновения с игроком
                     if (projectile.checkCollision(player)) {
                         player.takeDamage(projectile.damage);
                         projectile.active = false;
                     }
                     
-                    // Удаление неактивных снарядов
                     if (!projectile.active) {
                         this.projectiles.splice(i, 1);
                     }
@@ -2149,7 +2008,6 @@
             }
             
             shootProjectile(player) {
-                // Создаем снаряд, направленный в игрока
                 const projectile = new Projectile(
                     this.x,
                     this.y,
@@ -2157,14 +2015,12 @@
                     player.y + player.size/2,
                     this.projectileDamage,
                     PROJECTILE_SPEED * 0.8,
-                    '#8a2be2' // Фиолетовый цвет для пещерного босса
+                    '#8a2be2'
                 );
                 
                 this.projectiles.push(projectile);
                 
-                // Иногда создаем несколько снарядов
                 if (Math.random() < 0.3) {
-                    // Создаем еще 2 снаряда под небольшим углом
                     const angle1 = Math.atan2(
                         player.y + player.size/2 - this.y,
                         player.x + player.size/2 - this.x
@@ -2199,10 +2055,20 @@
                 }
             }
             
+            takeDamage(amount) {
+                super.takeDamage(amount);
+                if (!this.alive) {
+                    // Добавляем магический скипетр при смерти пещерного босса
+                    if (game.player.inventory.addItem(ITEM_TYPES.MAGIC_SCEPTER, 1)) {
+                        game.showStatus('Получен: Волшебный скипетр! ЛКМ: выстрел магическим снарядом.');
+                    }
+                }
+            }
+            
             draw(ctx, camera) {
                 if (!this.alive) return;
                 
-                // Тело пещерного босса (большой фиолетовый круг с текстурами)
+                // Тело пещерного босса
                 ctx.fillStyle = '#8a2be2';
                 ctx.beginPath();
                 ctx.arc(
@@ -2236,7 +2102,7 @@
                     ctx.fill();
                 }
                 
-                // Глазы пещерного босса (светящиеся)
+                // Глазы
                 ctx.fillStyle = '#00ffff';
                 ctx.beginPath();
                 ctx.arc(
@@ -2280,7 +2146,7 @@
                 );
                 ctx.fill();
                 
-                // Рот (больше и страшнее)
+                // Рот
                 ctx.fillStyle = '#000';
                 ctx.beginPath();
                 ctx.arc(
@@ -2300,7 +2166,10 @@
                     ctx.fillRect(toothX, this.y - camera.y + 15, 3, 8);
                 }
                 
-                // Рисуем снаряды
+                // Полоска здоровья
+                this.drawHealthBar(ctx, camera);
+                
+                // Снаряды
                 for (const projectile of this.projectiles) {
                     projectile.draw(ctx, camera);
                 }
@@ -2308,7 +2177,7 @@
         }
         
         // ============================
-        // КЛАСС МОБА (БАЗОВЫЙ)
+        // КЛАСС МОБА
         // ============================
         class Mob {
             constructor(x, y, type) {
@@ -2321,15 +2190,43 @@
                 this.speed = 1.0;
                 this.damage = 5;
                 this.lastAttackTime = 0;
-                this.attackCooldown = 1500; // мс
+                this.attackCooldown = 1500;
                 this.alive = true;
                 this.color = type === 'zombie' ? '#2d5a27' : '#c0c0c0';
+                this.burnTimer = 0;
+                this.isBurning = false;
+                this.burnDamage = 0.02; // 20 урона в секунду (1000 мс / 20 = 50 кадров при 60 FPS)
             }
             
-            update(player, deltaTime) {
+            update(player, deltaTime, gameTime) {
                 if (!this.alive) return;
                 
-                // Движение к игроку
+                // Горение зомби днём на поверхности
+                if (this.type === 'zombie' && gameTime.currentTime === TIME_OF_DAY.DAY && 
+                    player.currentLevel === WORLD_LEVELS.SURFACE) {
+                    this.isBurning = true;
+                    this.burnTimer += deltaTime;
+                    
+                    // Наносим урон каждые 50 мс для плавного эффекта
+                    if (this.burnTimer >= 50) {
+                        const burnDamageAmount = this.burnDamage * this.burnTimer;
+                        this.takeDamage(burnDamageAmount);
+                        this.burnTimer = 0;
+                    }
+                } else {
+                    this.isBurning = false;
+                    this.burnTimer = 0;
+                }
+                
+                // Движение только если ночь или это скелет в пещере
+                // Зомби днём всё ещё двигаются, но горят
+                if (this.type === 'zombie' && gameTime.currentTime === TIME_OF_DAY.DAY) {
+                    // Движение замедлено при горении
+                    this.speed = 0.5;
+                } else {
+                    this.speed = this.type === 'zombie' ? 1.0 : 0.8;
+                }
+                
                 const dx = player.x - this.x;
                 const dy = player.y - this.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
@@ -2339,12 +2236,10 @@
                     this.y += (dy / distance) * this.speed;
                 }
                 
-                // Обновление времени перезарядки атаки
                 if (this.lastAttackTime > 0) {
                     this.lastAttackTime -= deltaTime;
                 }
                 
-                // Проверка столкновения с игроком
                 if (this.checkCollision(player) && this.lastAttackTime <= 0) {
                     player.takeDamage(this.damage);
                     this.lastAttackTime = this.attackCooldown;
@@ -2364,22 +2259,18 @@
                     this.health = 0;
                     this.alive = false;
                     
-                    // Дроп с моба (с шансом)
-                    if (Math.random() < 0.3) { // 30% шанс
+                    if (Math.random() < 0.3) {
                         if (this.type === 'zombie') {
-                            // Зомби дропает уголь
                             if (Math.random() < 0.5) {
                                 game.player.inventory.addItem(ITEM_TYPES.COAL, 1);
                             }
                             
-                            // 10% шанс выбить алтарь возрождения
                             if (Math.random() < 0.1) {
                                 if (game.player.inventory.addItem(ITEM_TYPES.RESURRECTION_ALTAR, 1)) {
                                     game.showStatus('Получен: Алтарь возрождения! Установите для точки респавна.');
                                 }
                             }
                         } else if (this.type === 'skeleton') {
-                            // Скелет дропает камень
                             if (Math.random() < 0.5) {
                                 game.player.inventory.addItem(ITEM_TYPES.STONE, 1);
                             }
@@ -2391,8 +2282,35 @@
             draw(ctx, camera, gameTime) {
                 if (!this.alive) return;
                 
-                // Рисуем моба
-                ctx.fillStyle = this.color;
+                // Эффект горения для зомби днём
+                if (this.isBurning) {
+                    const flameSize = 8 + Math.sin(Date.now() / 100) * 3;
+                    ctx.fillStyle = '#FF4500';
+                    ctx.beginPath();
+                    ctx.arc(
+                        this.x - camera.x,
+                        this.y - camera.y - 15,
+                        flameSize,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                    
+                    ctx.fillStyle = '#FFD700';
+                    ctx.beginPath();
+                    ctx.arc(
+                        this.x - camera.x,
+                        this.y - camera.y - 15,
+                        flameSize * 0.6,
+                        0,
+                        Math.PI * 2
+                    );
+                    ctx.fill();
+                }
+                
+                // Тело моба
+                const currentColor = this.isBurning ? '#8B0000' : this.color;
+                ctx.fillStyle = currentColor;
                 ctx.beginPath();
                 ctx.arc(
                     this.x - camera.x,
@@ -2403,7 +2321,7 @@
                 );
                 ctx.fill();
                 
-                // Глазы моба
+                // Глазы
                 ctx.fillStyle = '#fff';
                 ctx.beginPath();
                 ctx.arc(
@@ -2447,7 +2365,7 @@
                 );
                 ctx.fill();
                 
-                // Для скелетов добавляем лук
+                // Лук для скелетов
                 if (this.type === 'skeleton') {
                     ctx.strokeStyle = '#8B4513';
                     ctx.lineWidth = 2;
@@ -2458,6 +2376,10 @@
                 }
                 
                 // Полоска здоровья
+                this.drawHealthBar(ctx, camera);
+            }
+            
+            drawHealthBar(ctx, camera) {
                 const barWidth = 40;
                 const barHeight = 4;
                 const barX = this.x - camera.x - barWidth / 2;
@@ -2467,7 +2389,9 @@
                 ctx.fillRect(barX, barY, barWidth, barHeight);
                 
                 const healthWidth = (this.health / this.maxHealth) * barWidth;
-                ctx.fillStyle = this.health > 50 ? '#2ecc71' : this.health > 20 ? '#f39c12' : '#e74c3c';
+                const healthColor = this.isBurning ? '#FF4500' : 
+                                  (this.health > 50 ? '#2ecc71' : this.health > 20 ? '#f39c12' : '#e74c3c');
+                ctx.fillStyle = healthColor;
                 ctx.fillRect(barX, barY, healthWidth, barHeight);
             }
         }
@@ -2478,21 +2402,22 @@
         class GameTime {
             constructor() {
                 this.currentTime = TIME_OF_DAY.DAY;
-                this.timeElapsed = 0;
+                this.timeElapsed = 0; // Начинаем с 0, чтобы игра начиналась днем
                 this.dayCount = 0;
                 this.lastTreeGrowthDay = 0;
                 this.surfaceMobs = [];
                 this.caveMobs = [];
                 this.maxMobsPerLevel = 10;
                 this.lastMobSpawnTime = 0;
-                this.mobSpawnCooldown = 5000; // мс
+                this.mobSpawnCooldown = 5000;
+                this.darknessFactor = 0; // Коэффициент темноты (0 - день, 1 - ночь)
+                this.transitionDuration = 5000; // 5 секунд на плавный переход
             }
             
             update(deltaTime, world, player) {
-                // Обновляем время
                 this.timeElapsed += deltaTime;
                 
-                // Проверяем смену дня и ночи
+                // Определяем текущее время суток
                 const cycleDuration = DAY_DURATION + NIGHT_DURATION;
                 const cyclePosition = this.timeElapsed % cycleDuration;
                 
@@ -2502,12 +2427,14 @@
                     this.currentTime = TIME_OF_DAY.NIGHT;
                 }
                 
+                // Вычисляем коэффициент темноты для плавного перехода
+                this.calculateDarknessFactor(cyclePosition, cycleDuration);
+                
                 // Обновляем счетчик дней
                 const newDayCount = Math.floor(this.timeElapsed / cycleDuration);
                 if (newDayCount > this.dayCount) {
                     this.dayCount = newDayCount;
                     
-                    // Проверяем рост деревьев каждые 2 дня
                     if (this.dayCount - this.lastTreeGrowthDay >= DAYS_FOR_TREE_GROWTH) {
                         const treesGrown = world.growTrees();
                         if (treesGrown > 0) {
@@ -2528,37 +2455,61 @@
                     this.lastMobSpawnTime = this.mobSpawnCooldown;
                 }
                 
-                // Обновляем мобов на поверхности (только ночью)
-                if (this.currentTime === TIME_OF_DAY.NIGHT) {
-                    for (let i = this.surfaceMobs.length - 1; i >= 0; i--) {
-                        const mob = this.surfaceMobs[i];
-                        if (mob.alive && player.currentLevel === WORLD_LEVELS.SURFACE) {
-                            mob.update(player, deltaTime);
-                        }
-                        
-                        // Удаляем мертвых мобов
-                        if (!mob.alive) {
-                            this.surfaceMobs.splice(i, 1);
-                        }
+                // Обновляем мобов на поверхности (всегда, а не только ночью)
+                for (let i = this.surfaceMobs.length - 1; i >= 0; i--) {
+                    const mob = this.surfaceMobs[i];
+                    if (mob.alive && player.currentLevel === WORLD_LEVELS.SURFACE) {
+                        mob.update(player, deltaTime, this);
                     }
                     
-                    // Убираем мобов с поверхности днем
-                    if (this.currentTime === TIME_OF_DAY.DAY) {
-                        this.surfaceMobs = [];
+                    if (!mob.alive) {
+                        this.surfaceMobs.splice(i, 1);
                     }
                 }
                 
-                // Обновляем мобов в пещере (всегда, но только если игрок в пещере)
+                // Обновляем мобов в пещере
                 for (let i = this.caveMobs.length - 1; i >= 0; i--) {
                     const mob = this.caveMobs[i];
                     if (mob.alive && player.currentLevel === WORLD_LEVELS.CAVE) {
-                        mob.update(player, deltaTime);
+                        mob.update(player, deltaTime, this);
                     }
                     
-                    // Удаляем мертвых мобов
                     if (!mob.alive) {
                         this.caveMobs.splice(i, 1);
                     }
+                }
+            }
+            
+            calculateDarknessFactor(cyclePosition, cycleDuration) {
+                const DAY_START = 0;
+                const DAY_END = DAY_DURATION;
+                const NIGHT_START = DAY_DURATION;
+                const NIGHT_END = cycleDuration;
+                
+                // Плавные переходы по 5 секунд в начале и конце ночи
+                const TRANSITION_DURATION = 5000; // 5 секунд
+                
+                if (cyclePosition < DAY_END - TRANSITION_DURATION) {
+                    // Полный день
+                    this.darknessFactor = 0;
+                } else if (cyclePosition < DAY_END) {
+                    // Закат (переход от дня к ночи)
+                    const transitionProgress = (cyclePosition - (DAY_END - TRANSITION_DURATION)) / TRANSITION_DURATION;
+                    this.darknessFactor = transitionProgress;
+                } else if (cyclePosition < NIGHT_START + TRANSITION_DURATION) {
+                    // Начало ночи (продолжение перехода)
+                    const transitionProgress = (cyclePosition - NIGHT_START) / TRANSITION_DURATION;
+                    this.darknessFactor = transitionProgress;
+                } else if (cyclePosition < NIGHT_END - TRANSITION_DURATION) {
+                    // Полная ночь
+                    this.darknessFactor = 1;
+                } else if (cyclePosition < NIGHT_END) {
+                    // Рассвет (переход от ночи к дню)
+                    const transitionProgress = (cyclePosition - (NIGHT_END - TRANSITION_DURATION)) / TRANSITION_DURATION;
+                    this.darknessFactor = 1 - transitionProgress;
+                } else {
+                    // Начало дня
+                    this.darknessFactor = 0;
                 }
             }
             
@@ -2568,7 +2519,6 @@
                     player.currentLevel === WORLD_LEVELS.SURFACE &&
                     this.surfaceMobs.length < this.maxMobsPerLevel) {
                     
-                    // Пытаемся заспавнить 1-2 зомби
                     const mobsToSpawn = Math.floor(Math.random() * 2) + 1;
                     
                     for (let i = 0; i < mobsToSpawn; i++) {
@@ -2579,14 +2529,12 @@
                         const maxAttempts = 20;
                         
                         do {
-                            // Спавним моба на расстоянии от игрока
                             const angle = Math.random() * Math.PI * 2;
                             const distance = 200 + Math.random() * 200;
                             spawnX = player.x + Math.cos(angle) * distance;
                             spawnY = player.y + Math.sin(angle) * distance;
                             attempts++;
                             
-                            // Проверяем, что позиция в пределах мира и не рядом с факелом
                             if (spawnX >= 0 && spawnX < WORLD_WIDTH * TILE_SIZE &&
                                 spawnY >= 0 && spawnY < WORLD_HEIGHT * TILE_SIZE) {
                                 
@@ -2610,21 +2558,18 @@
                 if (player.currentLevel === WORLD_LEVELS.CAVE &&
                     this.caveMobs.length < this.maxMobsPerLevel) {
                     
-                    // Пытаемся заспавнить 1 скелета
                     if (this.caveMobs.length < this.maxMobsPerLevel) {
                         let spawnX, spawnY;
                         let attempts = 0;
                         const maxAttempts = 30;
                         
                         do {
-                            // Спавним моба на расстоянии от игрока в пещере
                             const angle = Math.random() * Math.PI * 2;
                             const distance = 150 + Math.random() * 150;
                             spawnX = player.x + Math.cos(angle) * distance;
                             spawnY = player.y + Math.sin(angle) * distance;
                             attempts++;
                             
-                            // Проверяем, что позиция в пределах мира, на полу пещеры и не рядом с факелом
                             if (spawnX >= 0 && spawnX < WORLD_WIDTH * TILE_SIZE &&
                                 spawnY >= 0 && spawnY < WORLD_HEIGHT * TILE_SIZE) {
                                 
@@ -2640,8 +2585,8 @@
                         
                         if (attempts < maxAttempts) {
                             const skeleton = new Mob(spawnX, spawnY, 'skeleton');
-                            skeleton.speed = 0.8; // Скелеты медленнее
-                            skeleton.damage = 8; // Но наносят больше урона
+                            skeleton.speed = 0.8;
+                            skeleton.damage = 8;
                             this.caveMobs.push(skeleton);
                         }
                     }
@@ -2649,8 +2594,8 @@
             }
             
             draw(ctx, camera, player) {
-                // Рисуем мобов на поверхности (только ночью и если игрок на поверхности)
-                if (this.currentTime === TIME_OF_DAY.NIGHT && player.currentLevel === WORLD_LEVELS.SURFACE) {
+                // Рисуем мобов на поверхности (всегда, не только ночью)
+                if (player.currentLevel === WORLD_LEVELS.SURFACE) {
                     for (const mob of this.surfaceMobs) {
                         if (mob.alive) {
                             mob.draw(ctx, camera, this);
@@ -2658,7 +2603,7 @@
                     }
                 }
                 
-                // Рисуем мобов в пещере (только если игрок в пещере)
+                // Рисуем мобов в пещере
                 if (player.currentLevel === WORLD_LEVELS.CAVE) {
                     for (const mob of this.caveMobs) {
                         if (mob.alive && !player.isPositionInDarkness(mob.x, mob.y, game.world, this)) {
@@ -2668,44 +2613,53 @@
                 }
             }
             
-            drawTimeIndicator(ctx) {
-                // Индикатор времени суток
-                const timeWidth = 150;
-                const timeHeight = 20;
-                const timeX = CANVAS_WIDTH - timeWidth - 20;
-                const timeY = 20;
+            drawTimeBar(ctx) {
+                const barWidth = 200;
+                const barHeight = 15;
+                const barX = CANVAS_WIDTH - barWidth - 20;
+                const barY = 20;
                 
-                // Фон индикатора
+                // Фон шкалы
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                ctx.fillRect(timeX, timeY, timeWidth, timeHeight);
+                ctx.fillRect(barX, barY, barWidth, barHeight);
                 
-                // Прогресс времени
+                // Рассчитываем положение в цикле
                 const cycleDuration = DAY_DURATION + NIGHT_DURATION;
                 const cyclePosition = this.timeElapsed % cycleDuration;
                 const progress = cyclePosition / cycleDuration;
                 
-                // Индикатор дня/ночи
-                const dayWidth = DAY_DURATION / cycleDuration * timeWidth;
+                // Рисуем зоны дня и ночи
+                const dayWidth = (DAY_DURATION / cycleDuration) * barWidth;
+                const nightWidth = (NIGHT_DURATION / cycleDuration) * barWidth;
                 
                 // День
-                ctx.fillStyle = '#FFD700';
-                ctx.fillRect(timeX, timeY, dayWidth, timeHeight);
+                ctx.fillStyle = 'rgba(46, 204, 113, 0.5)';
+                ctx.fillRect(barX, barY, dayWidth, barHeight);
                 
                 // Ночь
-                ctx.fillStyle = '#4169E1';
-                ctx.fillRect(timeX + dayWidth, timeY, timeWidth - dayWidth, timeHeight);
+                ctx.fillStyle = 'rgba(52, 152, 219, 0.5)';
+                ctx.fillRect(barX + dayWidth, barY, nightWidth, barHeight);
                 
-                // Ползунок текущего времени
-                const sliderX = timeX + progress * timeWidth;
+                // Бегунок
+                const markerX = barX + progress * barWidth;
                 ctx.fillStyle = '#fff';
-                ctx.fillRect(sliderX - 2, timeY - 5, 4, timeHeight + 10);
+                ctx.fillRect(markerX - 2, barY - 3, 4, barHeight + 6);
                 
-                // Текст
+                // Время до смены
+                let timeLeft;
+                let timeText;
+                if (this.currentTime === TIME_OF_DAY.DAY) {
+                    timeLeft = Math.max(0, DAY_DURATION - cyclePosition);
+                    timeText = `День: ${Math.ceil(timeLeft / 1000)}с`;
+                } else {
+                    timeLeft = Math.max(0, NIGHT_DURATION - (cyclePosition - DAY_DURATION));
+                    timeText = `Ночь: ${Math.ceil(timeLeft / 1000)}с`;
+                }
+                
                 ctx.fillStyle = '#fff';
-                ctx.font = 'bold 12px Courier New';
-                ctx.textAlign = 'center';
-                const timeText = this.currentTime === TIME_OF_DAY.DAY ? 'День' : 'Ночь';
-                ctx.fillText(`${timeText} (День ${this.dayCount + 1})`, timeX + timeWidth/2, timeY + timeHeight + 15);
+                ctx.font = '12px Courier New';
+                ctx.textAlign = 'right';
+                ctx.fillText(timeText, barX - 5, barY + barHeight/2 + 4);
             }
         }
         
@@ -2732,68 +2686,56 @@
             craft(recipe, inventory) {
                 if (!this.canCraft(recipe, inventory)) return false;
                 
-                // Убираем ингредиенты
                 for (let ingredient of recipe.ingredients) {
                     inventory.removeItem(ingredient.type, ingredient.count);
                 }
                 
-                // Добавляем результат
                 return inventory.addItem(recipe.result);
             }
             
             draw(ctx) {
                 if (!this.isOpen) return;
                 
-                // Фон меню крафта
                 ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
                 ctx.fillRect(100, 80, CANVAS_WIDTH - 200, CANVAS_HEIGHT - 160);
                 
-                // Заголовок
                 ctx.fillStyle = '#4af';
                 ctx.font = 'bold 28px Courier New';
                 ctx.textAlign = 'center';
                 ctx.fillText('Крафт', CANVAS_WIDTH / 2, 120);
                 
-                // Область для рецептов
                 const recipeAreaX = 120;
                 const recipeAreaY = 150;
                 const recipeAreaWidth = CANVAS_WIDTH - 240;
                 const recipeAreaHeight = 350;
                 const recipeHeight = 60;
                 
-                // Расчет максимального скролла
                 const totalRecipesHeight = this.recipes.length * recipeHeight;
                 this.maxScrollOffset = Math.max(0, totalRecipesHeight - recipeAreaHeight);
                 
-                // Область для отрисовки рецептов (с клиппингом)
                 ctx.save();
                 ctx.beginPath();
                 ctx.rect(recipeAreaX, recipeAreaY, recipeAreaWidth, recipeAreaHeight);
                 ctx.clip();
                 
-                // Фон области рецептов
                 ctx.fillStyle = 'rgba(30, 30, 50, 0.8)';
                 ctx.fillRect(recipeAreaX, recipeAreaY, recipeAreaWidth, recipeAreaHeight);
                 
-                // Рецепты
                 const startY = recipeAreaY - this.scrollOffset;
                 
                 for (let i = 0; i < this.recipes.length; i++) {
                     const recipe = this.recipes[i];
                     const y = startY + i * recipeHeight;
                     
-                    // Фон рецепта
                     const canCraft = this.canCraft(recipe, game.player.inventory);
                     ctx.fillStyle = canCraft ? 'rgba(50, 50, 70, 0.8)' : 'rgba(70, 30, 30, 0.8)';
                     ctx.fillRect(recipeAreaX + 10, y + 5, recipeAreaWidth - 20, recipeHeight - 10);
                     
-                    // Название рецепта
                     ctx.fillStyle = canCraft ? '#8cf' : '#f88';
                     ctx.font = 'bold 18px Courier New';
                     ctx.textAlign = 'left';
                     ctx.fillText(recipe.name, recipeAreaX + 30, y + 30);
                     
-                    // Ингредиенты
                     ctx.fillStyle = canCraft ? '#ccc' : '#aaa';
                     ctx.font = '14px Courier New';
                     let ingredientText = '';
@@ -2804,14 +2746,12 @@
                     }
                     ctx.fillText(ingredientText, recipeAreaX + 30, y + 50);
                     
-                    // Результат
                     ctx.fillStyle = ITEM_COLORS[recipe.result];
                     ctx.fillRect(CANVAS_WIDTH - 250, y + 10, 40, 40);
                     ctx.fillStyle = '#fff';
                     ctx.textAlign = 'center';
                     ctx.fillText(ITEM_NAMES[recipe.result], CANVAS_WIDTH - 230, y + 60);
                     
-                    // Подсветка при наведении
                     const mouseInRecipe = game.mouse.x >= recipeAreaX + 10 && 
                                          game.mouse.x <= recipeAreaX + recipeAreaWidth - 10 && 
                                          game.mouse.y >= y + 5 && 
@@ -2822,7 +2762,6 @@
                         ctx.lineWidth = 2;
                         ctx.strokeRect(recipeAreaX + 10, y + 5, recipeAreaWidth - 20, recipeHeight - 10);
                         
-                        // Клик для крафта
                         if (game.mouse.clicked && canCraft) {
                             if (this.craft(recipe, game.player.inventory)) {
                                 game.mouse.clicked = false;
@@ -2834,7 +2773,6 @@
                 
                 ctx.restore();
                 
-                // Полоса прокрутки (если нужно)
                 if (totalRecipesHeight > recipeAreaHeight) {
                     const scrollbarWidth = 10;
                     const scrollbarX = recipeAreaX + recipeAreaWidth - scrollbarWidth - 5;
@@ -2842,20 +2780,16 @@
                     const thumbHeight = (recipeAreaHeight / totalRecipesHeight) * scrollbarHeight;
                     const thumbY = recipeAreaY + (this.scrollOffset / totalRecipesHeight) * scrollbarHeight;
                     
-                    // Фон полосы прокрутки
                     ctx.fillStyle = 'rgba(100, 100, 120, 0.5)';
                     ctx.fillRect(scrollbarX, recipeAreaY, scrollbarWidth, scrollbarHeight);
                     
-                    // Ползунок
                     ctx.fillStyle = '#4af';
                     ctx.fillRect(scrollbarX, thumbY, scrollbarWidth, thumbHeight);
                     
-                    // Контур ползунка
                     ctx.strokeStyle = '#fff';
                     ctx.lineWidth = 1;
                     ctx.strokeRect(scrollbarX, thumbY, scrollbarWidth, thumbHeight);
                     
-                    // Обработка клика по полосе прокрутки
                     if (game.mouse.clicked && 
                         game.mouse.x >= scrollbarX && 
                         game.mouse.x <= scrollbarX + scrollbarWidth && 
@@ -2868,7 +2802,6 @@
                     }
                 }
                 
-                // Подсказки
                 ctx.fillStyle = '#aaa';
                 ctx.font = '14px Courier New';
                 ctx.textAlign = 'center';
@@ -2894,11 +2827,9 @@
             }
             
             update(player) {
-                // Центрируем камеру на игроке
                 this.x = player.x - CANVAS_WIDTH / 2;
                 this.y = player.y - CANVAS_HEIGHT / 2;
                 
-                // Ограничиваем камеру в пределах мира
                 this.x = Math.max(0, Math.min(this.x, WORLD_WIDTH * TILE_SIZE - CANVAS_WIDTH));
                 this.y = Math.max(0, Math.min(this.y, WORLD_HEIGHT * TILE_SIZE - CANVAS_HEIGHT));
             }
@@ -2925,7 +2856,6 @@
                 this.showSmeltHint = false;
                 this.showLevelChangeHint = false;
                 
-                // Управление
                 this.keys = {};
                 this.mouse = {
                     x: 0,
@@ -2933,23 +2863,17 @@
                     clicked: false
                 };
                 
-                // Статусное сообщение
                 this.statusMessage = '';
                 this.statusTimer = 0;
                 
-                // Инициализация обработчиков событий
                 this.initEventListeners();
-                
-                // Запуск игрового цикла
                 requestAnimationFrame(this.gameLoop.bind(this));
             }
             
             initEventListeners() {
-                // Клавиатура
                 document.addEventListener('keydown', (e) => {
                     this.keys[e.code] = true;
                     
-                    // Выбор слота инвентаря (1-0)
                     if (e.code >= 'Digit1' && e.code <= 'Digit9') {
                         const slotIndex = parseInt(e.code[5]) - 1;
                         if (slotIndex >= 0 && slotIndex < this.player.inventory.slots.length) {
@@ -2960,31 +2884,25 @@
                         this.player.selectedSlot = 9;
                     }
                     
-                    // Открытие/закрытие меню крафта
                     if (e.code === 'KeyC') {
                         this.craftingSystem.isOpen = !this.craftingSystem.isOpen;
-                        // Сбрасываем скролл при открытии меню
                         if (this.craftingSystem.isOpen) {
                             this.craftingSystem.scrollOffset = 0;
                         }
                     }
                     
-                    // Закрытие меню крафта
                     if (e.code === 'Escape') {
                         this.craftingSystem.isOpen = false;
                     }
                     
-                    // Сбор ресурсов
                     if (e.code === 'KeyE') {
                         this.collectResourceWithE();
                     }
                     
-                    // Плавка руды
                     if (e.code === 'KeyF') {
                         this.smeltOre();
                     }
                     
-                    // Смена уровня (спуск/подъем)
                     if (e.code === 'Space') {
                         this.changeLevel();
                     }
@@ -2994,7 +2912,6 @@
                     this.keys[e.code] = false;
                 });
                 
-                // Мышь
                 this.canvas.addEventListener('mousemove', (e) => {
                     const rect = this.canvas.getBoundingClientRect();
                     this.mouse.x = e.clientX - rect.left;
@@ -3002,14 +2919,12 @@
                 });
                 
                 this.canvas.addEventListener('mousedown', (e) => {
-                    if (e.button === 0) { // Левая кнопка мыши
+                    if (e.button === 0) {
                         this.mouse.clicked = true;
                         
-                        // Если открыто меню крафта, клик обрабатывается там
                         if (!this.craftingSystem.isOpen) {
                             const selectedItem = this.player.inventory.getSelectedItem();
                             
-                            // Использование магического скипетра для стрельбы снарядами
                             if (selectedItem.type === ITEM_TYPES.MAGIC_SCEPTER) {
                                 const worldX = this.mouse.x + this.camera.x;
                                 const worldY = this.mouse.y + this.camera.y;
@@ -3017,7 +2932,6 @@
                                 return;
                             }
                             
-                            // Использование молота или железного молота для атаки
                             const canAttackWithHammer = selectedItem.type === ITEM_TYPES.HAMMER || 
                                                        selectedItem.type === ITEM_TYPES.IRON_HAMMER;
                             
@@ -3025,7 +2939,6 @@
                                 const worldX = this.mouse.x + this.camera.x;
                                 const worldY = this.mouse.y + this.camera.y;
                                 
-                                // Проверяем босса на поверхности
                                 if (this.player.currentLevel === WORLD_LEVELS.SURFACE && 
                                     this.boss && this.boss.alive) {
                                     const dx = worldX - this.boss.x;
@@ -3045,14 +2958,13 @@
                                     }
                                 }
                                 
-                                // Проверяем пещерного босса
                                 if (this.player.currentLevel === WORLD_LEVELS.CAVE && 
                                     this.caveBoss && this.caveBoss.alive) {
                                     const dx = worldX - this.caveBoss.x;
                                     const dy = worldY - this.caveBoss.y;
                                     const distance = Math.sqrt(dx * dx + dy * dy);
                                     
-                                    if (distance < 120) { // Больший радиус для пещерного босса
+                                    if (distance < 120) {
                                         const damage = selectedItem.type === ITEM_TYPES.IRON_HAMMER ? 35 : 25;
                                         this.caveBoss.takeDamage(damage);
                                         this.player.attack();
@@ -3065,11 +2977,9 @@
                                     }
                                 }
                                 
-                                // Атака мобов молотом (только если рядом)
                                 const attackRadius = 60;
                                 let attackedMob = false;
                                 
-                                // Проверяем мобов на поверхности
                                 if (this.player.currentLevel === WORLD_LEVELS.SURFACE) {
                                     for (let zombie of this.gameTime.surfaceMobs) {
                                         if (zombie.alive) {
@@ -3088,7 +2998,6 @@
                                     }
                                 }
                                 
-                                // Проверяем мобов в пещере
                                 if (this.player.currentLevel === WORLD_LEVELS.CAVE) {
                                     for (let skeleton of this.gameTime.caveMobs) {
                                         if (skeleton.alive) {
@@ -3112,32 +3021,26 @@
                                     return;
                                 }
                                 
-                                // Если никого не атаковали, просто используем атаку (например, для разрушения чего-то в будущем)
                                 this.player.attack();
                                 this.showStatus('Атака!');
                                 return;
                             }
                             
-                            // Использование улучшенной кирки
                             if (selectedItem.type === ITEM_TYPES.IMPROVED_PICKAXE) {
                                 this.useImprovedPickaxe();
                                 return;
                             }
                             
-                            // Использование инструментов на ЛКМ
-                            // Использование лопаты для создания шахты
                             if (selectedItem.type === ITEM_TYPES.SHOVEL && this.player.currentLevel === WORLD_LEVELS.SURFACE) {
                                 this.useShovel();
                                 return;
                             }
                             
-                            // Использование кирки для добычи в пещере
                             if (selectedItem.type === ITEM_TYPES.PICKAXE && this.player.currentLevel === WORLD_LEVELS.CAVE) {
                                 this.usePickaxe();
                                 return;
                             }
                             
-                            // Строительство (для других предметов)
                             this.placeBuilding();
                         }
                     }
@@ -3149,17 +3052,14 @@
                     }
                 });
                 
-                // Колесо мыши для выбора слота инвентаря и прокрутки меню крафта
                 this.canvas.addEventListener('wheel', (e) => {
                     e.preventDefault();
                     
-                    // Если открыто меню крафта, прокручиваем его
                     if (this.craftingSystem.isOpen) {
                         this.craftingSystem.handleWheel(e.deltaY);
                         return;
                     }
                     
-                    // Иначе меняем выбранный слот инвентаря
                     if (e.deltaY > 0) {
                         this.player.selectedSlot = (this.player.selectedSlot + 1) % this.player.inventory.slots.length;
                     } else {
@@ -3172,7 +3072,6 @@
                 const playerCenterX = this.player.x + this.player.size / 2;
                 const playerCenterY = this.player.y + this.player.size / 2;
                 
-                // Проверяем ресурсы вокруг игрока (только на поверхности)
                 if (this.player.currentLevel === WORLD_LEVELS.SURFACE) {
                     const checkRadius = TILE_SIZE * 1.5;
                     
@@ -3181,7 +3080,6 @@
                             const checkX = playerCenterX + dx;
                             const checkY = playerCenterY + dy;
                             
-                            // Проверяем, есть ли дерево или камень
                             const tileType = this.world.getTileAt(checkX, checkY, this.player.currentLevel);
                             if (tileType === TILE_TYPES.STONE || tileType === TILE_TYPES.TREE) {
                                 const resourceType = this.world.collectResource(checkX, checkY, this.player.currentLevel, null);
@@ -3205,11 +3103,9 @@
             }
             
             useShovel() {
-                // Использование лопаты для создания шахты
                 const worldX = this.mouse.x + this.camera.x;
                 const worldY = this.mouse.y + this.camera.y;
                 
-                // Проверяем, можно ли создать шахту здесь
                 const tileType = this.world.getTileAt(worldX, worldY, this.player.currentLevel);
                 if (tileType === TILE_TYPES.GRASS) {
                     if (this.world.createMineShaft(worldX, worldY)) {
@@ -3223,17 +3119,14 @@
             }
             
             usePickaxe() {
-                // Использование кирки для добычи в пещере
                 const worldX = this.mouse.x + this.camera.x;
                 const worldY = this.mouse.y + this.camera.y;
                 
-                // Проверяем, находится ли позиция в темноте
                 if (this.player.isPositionInDarkness(worldX, worldY, this.world, this.gameTime)) {
                     this.showStatus('Слишком темно! Подойдите ближе или поставьте факел.');
                     return;
                 }
                 
-                // Проверяем, можно ли добыть здесь
                 const tileType = this.world.getTileAt(worldX, worldY, this.player.currentLevel);
                 const canMine = tileType === CAVE_TILE_TYPES.CAVE_WALL || 
                                tileType === CAVE_TILE_TYPES.IRON_ORE || 
@@ -3255,21 +3148,17 @@
             }
             
             useImprovedPickaxe() {
-                // Использование улучшенной кирки
                 const worldX = this.mouse.x + this.camera.x;
                 const worldY = this.mouse.y + this.camera.y;
                 
-                // Проверяем, находится ли позиция в темноте (только для пещеры)
                 if (this.player.currentLevel === WORLD_LEVELS.CAVE && 
                     this.player.isPositionInDarkness(worldX, worldY, this.world, this.gameTime)) {
                     this.showStatus('Слишком темно! Подойдите ближе или поставьте факел.');
                     return;
                 }
                 
-                // Проверяем, можно ли разрушить алтарь
                 const altarType = this.world.breakAltar(worldX, worldY, this.player.currentLevel);
                 if (altarType !== ITEM_TYPES.NONE) {
-                    // Возвращаем алтарь в инвентарь
                     if (this.player.inventory.addItem(altarType, 1)) {
                         const itemName = ITEM_NAMES[altarType];
                         this.showStatus(`Алтарь разрушен! Возвращено: ${itemName}`);
@@ -3279,7 +3168,6 @@
                     return;
                 }
                 
-                // Если в пещере, копаем область 3x3
                 if (this.player.currentLevel === WORLD_LEVELS.CAVE) {
                     const minedItems = this.world.digArea(worldX, worldY, this.player.currentLevel);
                     if (minedItems.length > 0) {
@@ -3305,18 +3193,15 @@
             placeBuilding() {
                 const selectedItem = this.player.inventory.getSelectedItem();
                 
-                // Проверяем, можно ли разместить этот предмет
                 const placeableItems = [
                     ITEM_TYPES.WALL, ITEM_TYPES.ALTAR, ITEM_TYPES.FURNACE, 
                     ITEM_TYPES.LADDER, ITEM_TYPES.TORCH, ITEM_TYPES.RESURRECTION_ALTAR
                 ];
                 
                 if (placeableItems.includes(selectedItem.type)) {
-                    // Вычисляем координаты в мире
                     const worldX = this.mouse.x + this.camera.x;
                     const worldY = this.mouse.y + this.camera.y;
                     
-                    // В пещере и ночью на поверхности проверяем, не в темноте ли место
                     if ((this.player.currentLevel === WORLD_LEVELS.CAVE || 
                         (this.player.currentLevel === WORLD_LEVELS.SURFACE && 
                          this.gameTime.currentTime === TIME_OF_DAY.NIGHT)) && 
@@ -3325,7 +3210,6 @@
                         return;
                     }
                     
-                    // Проверяем, что игрок не пытается построить слишком далеко
                     const playerCenterX = this.player.x + this.player.size / 2;
                     const playerCenterY = this.player.y + this.player.size / 2;
                     const distance = Math.sqrt(
@@ -3338,17 +3222,13 @@
                         return;
                     }
                     
-                    // Сохраняем тип предмета до удаления из инвентаря
                     const itemType = selectedItem.type;
                     
-                    // Размещаем предмет
                     if (this.world.placeTile(worldX, worldY, itemType, this.player.currentLevel)) {
-                        // Убираем предмет из инвентаря
                         if (this.player.inventory.removeItem(itemType, 1)) {
                             const itemName = ITEM_NAMES[itemType];
                             this.showStatus(`Построено: ${itemName}`);
                             
-                            // Если построен алтарь возрождения, устанавливаем точку возрождения
                             if (itemType === ITEM_TYPES.RESURRECTION_ALTAR) {
                                 const tileX = Math.floor(worldX / TILE_SIZE);
                                 const tileY = Math.floor(worldY / TILE_SIZE);
@@ -3360,7 +3240,6 @@
                                 this.showStatus('Точка возрождения установлена!');
                             }
                             
-                            // Если построен алтарь, спауним соответствующего босса
                             if (itemType === ITEM_TYPES.ALTAR) {
                                 if (this.player.currentLevel === WORLD_LEVELS.SURFACE && !this.bossSpawned) {
                                     this.spawnBoss();
@@ -3369,7 +3248,6 @@
                                 }
                             }
                         } else {
-                            // Если не удалось удалить предмет из инвентаря, удаляем построенный тайл
                             const tileX = Math.floor(worldX / TILE_SIZE);
                             const tileY = Math.floor(worldY / TILE_SIZE);
                             if (this.player.currentLevel === WORLD_LEVELS.SURFACE) {
@@ -3392,18 +3270,14 @@
             }
             
             smeltOre() {
-                // Проверяем, рядом ли печка
                 if (this.world.isNearFurnace(this.player.x + this.player.size/2, 
                     this.player.y + this.player.size/2, this.player.currentLevel)) {
                     
-                    // Проверяем, может ли игрок плавить
                     if (this.player.canSmelt()) {
-                        // Проверяем наличие угля и железной руды
                         const coalCount = this.player.inventory.getItemCount(ITEM_TYPES.COAL);
                         const ironOreCount = this.player.inventory.getItemCount(ITEM_TYPES.IRON_ORE);
                         
                         if (coalCount >= 1 && ironOreCount >= 1) {
-                            // Плавим железную руду
                             this.player.inventory.removeItem(ITEM_TYPES.COAL, 1);
                             this.player.inventory.removeItem(ITEM_TYPES.IRON_ORE, 1);
                             this.player.inventory.addItem(ITEM_TYPES.IRON_BAR, 1);
@@ -3422,17 +3296,14 @@
             }
             
             changeLevel() {
-                // Проверяем, рядом ли шахта или лестница
                 if (this.world.isNearMineShaftOrLadder(this.player.x + this.player.size/2, 
                     this.player.y + this.player.size/2, this.player.currentLevel)) {
                     
                     if (this.player.currentLevel === WORLD_LEVELS.SURFACE) {
-                        // Спускаемся в пещеру
                         this.player.currentLevel = WORLD_LEVELS.CAVE;
-                        // Помещаем игрока в центр пещеры (рядом с лестницей на поверхность)
                         this.player.x = Math.floor(WORLD_WIDTH / 2) * TILE_SIZE;
                         this.player.y = Math.floor(WORLD_HEIGHT / 2) * TILE_SIZE;
-                        // Ищем свободное место рядом с лестницей
+                        
                         let foundSpot = false;
                         for (let dy = -1; dy <= 1 && !foundSpot; dy++) {
                             for (let dx = -1; dx <= 1 && !foundSpot; dx++) {
@@ -3448,19 +3319,15 @@
                         }
                         this.showStatus('Вы спустились в пещеру! Используйте кирку (ЛКМ) для добычи руды.');
                     } else {
-                        // Поднимаемся на поверхность
                         this.player.currentLevel = WORLD_LEVELS.SURFACE;
                         
-                        // Находим ближайшую шахту для выхода
                         let foundShaft = false;
                         for (let [key, itemType] of this.world.surfacePlacedTiles) {
                             if (itemType === ITEM_TYPES.MINE_SHAFT) {
                                 const [x, y] = key.split(',').map(Number);
-                                // Помещаем игрока рядом с шахтой, а не на ней
                                 this.player.x = x * TILE_SIZE + TILE_SIZE;
                                 this.player.y = y * TILE_SIZE;
                                 
-                                // Ищем свободное место рядом с шахтой
                                 let foundSpot = false;
                                 for (let dy = -1; dy <= 1 && !foundSpot; dy++) {
                                     for (let dx = -1; dx <= 1 && !foundSpot; dx++) {
@@ -3479,11 +3346,10 @@
                             }
                         }
                         
-                        // Если не нашли шахту, выходим в центр мира
                         if (!foundShaft) {
                             this.player.x = Math.floor(WORLD_WIDTH / 2) * TILE_SIZE;
                             this.player.y = Math.floor(WORLD_HEIGHT / 2) * TILE_SIZE;
-                            // Ищем свободное место
+                            
                             let foundSpot = false;
                             for (let dy = -1; dy <= 1 && !foundSpot; dy++) {
                                 for (let dx = -1; dx <= 1 && !foundSpot; dx++) {
@@ -3506,7 +3372,6 @@
             }
             
             spawnBoss() {
-                // Спауним босса в случайном месте, но не слишком близко к игроку
                 let spawnX, spawnY;
                 let attempts = 0;
                 const maxAttempts = 20;
@@ -3516,7 +3381,6 @@
                     spawnY = Math.random() * (WORLD_HEIGHT * TILE_SIZE - 200) + 100;
                     attempts++;
                     
-                    // Проверяем расстояние до игрока
                     const dx = spawnX - this.player.x;
                     const dy = spawnY - this.player.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
@@ -3532,7 +3396,6 @@
             }
             
             spawnCaveBoss() {
-                // Спауним пещерного босса в пещере
                 let spawnX, spawnY;
                 let attempts = 0;
                 const maxAttempts = 30;
@@ -3542,14 +3405,12 @@
                     spawnY = Math.random() * (WORLD_HEIGHT * TILE_SIZE - 200) + 100;
                     attempts++;
                     
-                    // Проверяем, что позиция в пещере (на полу) и не слишком близко к игроку
                     const tileType = this.world.getTileAt(spawnX, spawnY, WORLD_LEVELS.CAVE);
                     const dx = spawnX - this.player.x;
                     const dy = spawnY - this.player.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
                     
                     if (tileType === CAVE_TILE_TYPES.CAVE_FLOOR && distance > TILE_SIZE * 8) {
-                        // Проверяем, нет ли препятствий вокруг
                         let clearArea = true;
                         for (let dy = -2; dy <= 2 && clearArea; dy++) {
                             for (let dx = -2; dx <= 2 && clearArea; dx++) {
@@ -3575,95 +3436,73 @@
             
             showStatus(message) {
                 this.statusMessage = message;
-                this.statusTimer = 180; // ~3 секунды при 60 FPS
+                this.statusTimer = 180;
                 document.getElementById('status').textContent = message;
             }
             
             update(deltaTime) {
-                // Если игра окончена, не обновляем
                 if (this.gameOver) return;
                 
-                // Обновляем время игры
                 this.gameTime.update(deltaTime, this.world, this.player);
-                
-                // Обновляем игрока
                 this.player.update(this.keys, this.world, deltaTime, this.gameTime);
-                
-                // Обновляем камеру
                 this.camera.update(this.player);
                 
-                // Обновляем босса поверхности
                 if (this.boss && this.boss.alive && this.player.currentLevel === WORLD_LEVELS.SURFACE) {
                     this.boss.update(this.player, deltaTime);
                 }
                 
-                // Обновляем пещерного босса
                 if (this.caveBoss && this.caveBoss.alive && this.player.currentLevel === WORLD_LEVELS.CAVE) {
                     this.caveBoss.update(this.player, deltaTime);
                 }
                 
-                // Проверяем смерть игрока
                 if (this.player.health <= 0) {
-                    // Возрождаем игрока
                     this.player.respawn();
                     this.showStatus('Вы возродились у алтаря возрождения!');
                 }
                 
-                // Проверяем, рядом ли печка
                 this.showSmeltHint = this.world.isNearFurnace(
                     this.player.x + this.player.size/2, 
                     this.player.y + this.player.size/2, 
                     this.player.currentLevel
                 );
                 
-                // Проверяем, рядом ли шахта/лестница
                 this.showLevelChangeHint = this.world.isNearMineShaftOrLadder(
                     this.player.x + this.player.size/2, 
                     this.player.y + this.player.size/2, 
                     this.player.currentLevel
                 );
                 
-                // Обновляем таймер статусного сообщения
                 if (this.statusTimer > 0) {
                     this.statusTimer--;
                 }
             }
             
             draw() {
-                // Очистка canvas
                 this.ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
                 
-                // Рисуем мир (текущий уровень)
                 this.world.draw(this.ctx, this.camera, this.player.currentLevel, this.gameTime);
                 
-                // Рисуем босса поверхности (только на поверхности)
                 if (this.boss && this.boss.alive && this.player.currentLevel === WORLD_LEVELS.SURFACE) {
                     this.boss.draw(this.ctx, this.camera);
                 }
                 
-                // Рисуем пещерного босса (только в пещере)
                 if (this.caveBoss && this.caveBoss.alive && this.player.currentLevel === WORLD_LEVELS.CAVE) {
                     this.caveBoss.draw(this.ctx, this.camera);
                 }
                 
-                // Рисуем мобов
                 this.gameTime.draw(this.ctx, this.camera, this.player);
-                
-                // Рисуем игрока
                 this.player.draw(this.ctx, this.camera, this.gameTime);
                 
-                // Рисуем интерфейс
                 this.player.drawHealthBar(this.ctx);
                 this.player.drawLevelIndicator(this.ctx, this.gameTime);
-                this.player.inventory.draw(this.ctx);
-                this.gameTime.drawTimeIndicator(this.ctx);
                 
-                // Рисуем меню крафта
+                // Рисуем шкалу времени
+                this.gameTime.drawTimeBar(this.ctx);
+                
+                this.player.inventory.draw(this.ctx);
+                
                 this.craftingSystem.draw(this.ctx);
                 
-                // Рисуем экран поражения (удалено, теперь игрок возрождается)
-                
-                // Рисуем подсказки
                 if (this.showSmeltHint && !this.craftingSystem.isOpen) {
                     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
                     this.ctx.fillRect(CANVAS_WIDTH/2 - 150, 60, 300, 30);
@@ -3688,12 +3527,10 @@
                     this.ctx.fillText(hintText, CANVAS_WIDTH/2, 120);
                 }
                 
-                // Рисуем прицел для инструментов и оружия
                 if (!this.craftingSystem.isOpen) {
                     const selectedItem = this.player.inventory.getSelectedItem();
                     const ctx = this.ctx;
                     
-                    // Прицел для лопаты на поверхности
                     if (selectedItem.type === ITEM_TYPES.SHOVEL && this.player.currentLevel === WORLD_LEVELS.SURFACE) {
                         const worldX = this.mouse.x + this.camera.x;
                         const worldY = this.mouse.y + this.camera.y;
@@ -3720,8 +3557,6 @@
                             ctx.fillText('Можно использовать только на траве!', this.mouse.x, this.mouse.y + TILE_SIZE + 15);
                         }
                     }
-                    
-                    // Прицел для кирки в пещере
                     else if (selectedItem.type === ITEM_TYPES.PICKAXE && this.player.currentLevel === WORLD_LEVELS.CAVE) {
                         const worldX = this.mouse.x + this.camera.x;
                         const worldY = this.mouse.y + this.camera.y;
@@ -3755,8 +3590,6 @@
                             }
                         }
                     }
-                    
-                    // Прицел для улучшенной кирки
                     else if (selectedItem.type === ITEM_TYPES.IMPROVED_PICKAXE) {
                         const worldX = this.mouse.x + this.camera.x;
                         const worldY = this.mouse.y + this.camera.y;
@@ -3766,7 +3599,6 @@
                         let canUse = false;
                         let message = 'Улучшенная кирка: ';
                         
-                        // Проверяем, есть ли алтарь для разрушения
                         const key = `${tileX},${tileY}`;
                         if (this.player.currentLevel === WORLD_LEVELS.SURFACE) {
                             if (this.world.surfacePlacedTiles.has(key)) {
@@ -3784,19 +3616,16 @@
                                     message += 'разрушение алтаря';
                                 }
                             } else {
-                                // В пещере можно копать область 3x3
                                 canUse = true;
                                 message += 'добыча области 3x3';
                             }
                         }
                         
-                        // Проверяем темноту для пещеры
                         if (this.player.currentLevel === WORLD_LEVELS.CAVE && 
                             this.player.isPositionInDarkness(worldX, worldY, this.world, this.gameTime)) {
                             canUse = false;
                         }
                         
-                        // Рисуем область 3x3
                         for (let dy = -1; dy <= 1; dy++) {
                             for (let dx = -1; dx <= 1; dx++) {
                                 const drawX = this.mouse.x + dx * TILE_SIZE - TILE_SIZE/2;
@@ -3810,7 +3639,6 @@
                             }
                         }
                         
-                        // Основной прямоугольник в центре
                         ctx.strokeStyle = canUse ? '#FFD700' : '#888';
                         ctx.lineWidth = 2;
                         ctx.setLineDash([5, 5]);
@@ -3832,8 +3660,6 @@
                             ctx.fillText('Слишком темно! Подойдите ближе или поставьте факел.', this.mouse.x, this.mouse.y + TILE_SIZE + 15);
                         }
                     }
-                    
-                    // Прицел для магического скипетра
                     else if (selectedItem.type === ITEM_TYPES.MAGIC_SCEPTER) {
                         ctx.strokeStyle = '#9370DB';
                         ctx.lineWidth = 2;
@@ -3847,14 +3673,12 @@
                         ctx.fillText('Магический скипетр: выстрел снарядом', this.mouse.x, this.mouse.y - 15);
                     }
                     
-                    // Проверяем, можно ли построить этот предмет
                     const placeableItems = [
                         ITEM_TYPES.WALL, ITEM_TYPES.ALTAR, ITEM_TYPES.FURNACE, 
                         ITEM_TYPES.LADDER, ITEM_TYPES.TORCH, ITEM_TYPES.RESURRECTION_ALTAR
                     ];
                     
                     if (placeableItems.includes(selectedItem.type)) {
-                        // Проверяем, можно ли построить здесь
                         const worldX = this.mouse.x + this.camera.x;
                         const worldY = this.mouse.y + this.camera.y;
                         const tileX = Math.floor(worldX / TILE_SIZE);
@@ -3876,7 +3700,6 @@
                             }
                         }
                         
-                        // Проверяем, не в темноте ли место (для пещеры и ночи на поверхности)
                         if ((this.player.currentLevel === WORLD_LEVELS.CAVE || 
                             (this.player.currentLevel === WORLD_LEVELS.SURFACE && 
                              this.gameTime.currentTime === TIME_OF_DAY.NIGHT)) && 
@@ -3884,7 +3707,6 @@
                             canBuild = false;
                         }
                         
-                        // Проверяем расстояние до игрока
                         const playerCenterX = this.player.x + this.player.size / 2;
                         const playerCenterY = this.player.y + this.player.size / 2;
                         const distance = Math.sqrt(
@@ -3896,7 +3718,6 @@
                             canBuild = false;
                         }
                         
-                        // Рисуем прицел
                         ctx.strokeStyle = canBuild ? '#4af' : '#f44';
                         ctx.lineWidth = 2;
                         ctx.setLineDash([5, 5]);
@@ -3908,13 +3729,11 @@
                         );
                         ctx.setLineDash([]);
                         
-                        // Подпись
                         ctx.fillStyle = canBuild ? '#4af' : '#f44';
                         ctx.font = '12px Courier New';
                         ctx.textAlign = 'center';
                         ctx.fillText(ITEM_NAMES[selectedItem.type], this.mouse.x, this.mouse.y - 10);
                         
-                        // Если нельзя построить, показываем причину
                         if (!canBuild) {
                             if (distance > TILE_SIZE * 5) {
                                 ctx.fillText('Слишком далеко!', this.mouse.x, this.mouse.y + TILE_SIZE + 15);
@@ -3929,16 +3748,13 @@
                         }
                     } else if ((selectedItem.type === ITEM_TYPES.HAMMER || 
                               selectedItem.type === ITEM_TYPES.IRON_HAMMER)) {
-                        // Прицел для атаки молотом
                         const worldX = this.mouse.x + this.camera.x;
                         const worldY = this.mouse.y + this.camera.y;
                         const attackRadius = 60;
                         
-                        // Проверяем, есть ли враги в радиусе атаки
                         let canAttack = false;
                         let targetName = '';
                         
-                        // Проверяем босса на поверхности
                         if (this.player.currentLevel === WORLD_LEVELS.SURFACE && this.boss && this.boss.alive) {
                             const dx = worldX - this.boss.x;
                             const dy = worldY - this.boss.y;
@@ -3950,7 +3766,6 @@
                             }
                         }
                         
-                        // Проверяем пещерного босса
                         if (this.player.currentLevel === WORLD_LEVELS.CAVE && this.caveBoss && this.caveBoss.alive) {
                             const dx = worldX - this.caveBoss.x;
                             const dy = worldY - this.caveBoss.y;
@@ -3962,9 +3777,7 @@
                             }
                         }
                         
-                        // Проверяем мобов
                         if (!canAttack) {
-                            // Проверяем мобов на поверхности
                             if (this.player.currentLevel === WORLD_LEVELS.SURFACE) {
                                 for (let zombie of this.gameTime.surfaceMobs) {
                                     if (zombie.alive) {
@@ -3981,7 +3794,6 @@
                                 }
                             }
                             
-                            // Проверяем мобов в пещере
                             if (this.player.currentLevel === WORLD_LEVELS.CAVE) {
                                 for (let skeleton of this.gameTime.caveMobs) {
                                     if (skeleton.alive) {
@@ -3999,7 +3811,6 @@
                             }
                         }
                         
-                        // Если врагов нет, все равно можно атаковать (для разрушения чего-то в будущем)
                         if (!canAttack) {
                             canAttack = true;
                             targetName = 'Атака';
@@ -4022,7 +3833,6 @@
                     }
                 }
                 
-                // Статусное сообщение
                 if (this.statusTimer > 0) {
                     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
                     this.ctx.fillRect(10, CANVAS_HEIGHT - 40, CANVAS_WIDTH - 20, 30);
@@ -4032,78 +3842,15 @@
                     this.ctx.textAlign = 'center';
                     this.ctx.fillText(this.statusMessage, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 20);
                 }
-                
-                // Отображаем информацию о точке возрождения
-                this.drawRespawnInfo();
-                
-                // Отображаем информацию о мобах (только ночью)
-                if (this.gameTime.currentTime === TIME_OF_DAY.NIGHT) {
-                    this.drawMobInfo();
-                }
-            }
-            
-            drawRespawnInfo() {
-                const infoX = CANVAS_WIDTH - 180;
-                const infoY = 50;
-                const infoWidth = 160;
-                const infoHeight = 60;
-                
-                // Фон информации о точке возрождения
-                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                this.ctx.fillRect(infoX, infoY, infoWidth, infoHeight);
-                
-                this.ctx.fillStyle = '#00FF00';
-                this.ctx.font = 'bold 14px Courier New';
-                this.ctx.textAlign = 'left';
-                this.ctx.fillText('Точка возрождения:', infoX + 10, infoY + 20);
-                
-                this.ctx.font = '12px Courier New';
-                const respawnLevelText = this.player.respawnLevel === WORLD_LEVELS.SURFACE ? "Поверхность" : "Пещера";
-                this.ctx.fillText(`Уровень: ${respawnLevelText}`, infoX + 10, infoY + 40);
-            }
-            
-            drawMobInfo() {
-                const infoX = 20;
-                const infoY = CANVAS_HEIGHT - 120;
-                const infoWidth = 200;
-                const infoHeight = 50;
-                
-                // Фон информации о мобах
-                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-                this.ctx.fillRect(infoX, infoY, infoWidth, infoHeight);
-                
-                this.ctx.fillStyle = '#fff';
-                this.ctx.font = 'bold 14px Courier New';
-                this.ctx.textAlign = 'left';
-                this.ctx.fillText('Ночь! Враги активны:', infoX + 10, infoY + 20);
-                
-                this.ctx.font = '12px Courier New';
-                
-                // Мобы на поверхности
-                if (this.player.currentLevel === WORLD_LEVELS.SURFACE) {
-                    const zombieCount = this.gameTime.surfaceMobs.filter(mob => mob.alive).length;
-                    this.ctx.fillStyle = zombieCount > 0 ? '#f44' : '#8f8';
-                    this.ctx.fillText(`Зомби: ${zombieCount}`, infoX + 10, infoY + 40);
-                }
-                
-                // Мобы в пещере
-                if (this.player.currentLevel === WORLD_LEVELS.CAVE) {
-                    const skeletonCount = this.gameTime.caveMobs.filter(mob => mob.alive).length;
-                    this.ctx.fillStyle = skeletonCount > 0 ? '#f44' : '#8f8';
-                    this.ctx.fillText(`Скелеты: ${skeletonCount}`, infoX + 10, infoY + 40);
-                }
             }
             
             gameLoop(timestamp) {
-                // Вычисляем deltaTime
                 const deltaTime = timestamp - this.lastTime || 0;
                 this.lastTime = timestamp;
                 
-                // Обновляем и рисуем игру
                 this.update(deltaTime);
                 this.draw();
                 
-                // Продолжаем игровой цикл
                 requestAnimationFrame(this.gameLoop.bind(this));
             }
         }
@@ -4111,9 +3858,7 @@
         // ============================
         // ЗАПУСК ИГРЫ
         // ============================
-        // Ждем загрузки DOM
         document.addEventListener('DOMContentLoaded', () => {
-            // Создаем и запускаем игру
             window.game = new Game();
         });
     </script>
